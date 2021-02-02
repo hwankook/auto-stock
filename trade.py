@@ -148,6 +148,8 @@ def has_enough_cash(code, name, current_price=-1):
     if total_cash < current_price * shares:
         shares = int(total_cash // current_price)
         if shares == 0:
+            print_message(f'{name} {current_price:,}\n'
+                          f'100% 증거금 부족: {current_price - total_cash:7,}원 부족')
             return False, 0
 
     if shares == 0:
@@ -170,6 +172,9 @@ def get_high_volume_code():
 
     # ETF 먼저 담는다.
     for i in range(stop):
+        if 200 <= len(code_list):
+            break
+
         code = cpVolume.GetDataValue(1, i)  # 종목코드
         vol = cpVolume.GetDataValue(6, i)  # 거래량
         price = cpVolume.GetDataValue(3, i)  # 현재가
@@ -181,7 +186,7 @@ def get_high_volume_code():
             code_list[code] = (vol, price, percent, name)
 
     for i in range(stop):
-        if config.code_limit <= len(code_list):
+        if 200 <= len(code_list):
             break
 
         code = cpVolume.GetDataValue(1, i)  # 종목코드
@@ -212,7 +217,7 @@ def get_biggest_moves_code():
     cpMoves.BlockRequest()
 
     for i in range(cpMoves.GetHeaderValue(0)):
-        if config.code_limit <= len(code_list):
+        if 200 <= len(code_list):
             break
 
         if not cpCodeMgr.IsBigListingStock(code):
@@ -250,7 +255,7 @@ def get_market_cap():
         vol, price, percent, name = code_list[code]
         code_list[code] = (vol, price, percent, name, market_cap)
 
-    temp = OrderedDict(sorted(code_list.items(), key=lambda x: x[1][4], reverse=True))
+    temp = OrderedDict(sorted(code_list.items(), key=lambda x: x[1][4], reverse=True)[:config.code_limit])
     code_list.clear()
     code_list.update(temp)
 
@@ -484,16 +489,15 @@ def buy_stock(code, name, shares):
 def buy_all(listWatchData):
     """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
     try:
-
         # 주요 신호 포착될 때
         for code in listWatchData.keys():
             item = listWatchData[code]
             if item['indicator'] in indicators \
                     and indicators[item['indicator']] is True:
                 name = cpCodeMgr.CodeToName(code)
+                slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
                 enough, shares = has_enough_cash(code, name)
                 if enough:
-                    slack_send_message(f'{item["time"]} {code} {name}, {item["remark"]}')
                     buy_stock(code, name, shares)
 
         # 매수 목표가, 5일 이동평균가, 10일 이동평균가 보다 현재가가 클 때 매수
@@ -510,7 +514,7 @@ def buy_all(listWatchData):
                 enough, shares = has_enough_cash(code, name, current_price)
                 if enough:
                     buy_stock(code, name, shares)
-            time.sleep(1)
+            # time.sleep(1)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`sell_all() -> exception! " + str(e) + "`")
@@ -527,7 +531,7 @@ def auto_trade():
 
         t_now = datetime.now()
         t_start = t_now.replace(hour=9, minute=0, second=0, microsecond=0)
-        t_exit = t_now.replace(hour=15, minute=20, second=0, microsecond=0)
+        t_exit = t_now.replace(hour=15, minute=30, second=0, microsecond=0)
         if t_start < t_now < t_exit:  # AM 09:05 ~ PM 03:15 : 매수 & 매도
             total_cash = int(get_current_cash())  # 100% 증거금 주문 가능 금액 조회
             print_message(f'100% 증거금 주문가능금액: {total_cash:,}')
@@ -539,8 +543,6 @@ def auto_trade():
 
             buy_all(listWatchData)
 
-            code_list.clear()
-
             time.sleep(1)
         if t_now.minute % 30 == 0:  # 30분 마다 수익률 조회
             get_balance()
@@ -551,6 +553,7 @@ def auto_trade():
             get_balance()
             sys.exit(0)
 
+        code_list.clear()
         time.sleep(15)
 
 
