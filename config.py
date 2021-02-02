@@ -3,7 +3,7 @@ import os
 
 __all__ = ['config']
 
-parser = configparser.ConfigParser()
+parser = configparser.ConfigParser(interpolation=None)
 parser.read(os.path.dirname(os.path.abspath(__file__)) + '/config.ini')
 
 

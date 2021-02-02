@@ -6,11 +6,11 @@ import requests
 from config import config
 
 
-def get_request_query(params, serviceKey):
+def get_request_query(params):
     import urllib.parse as urlparse
     params = urlparse.urlencode(params)
     query = 'http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo?' + params + '&' \
-            + 'serviceKey' + '=' + serviceKey
+            + 'serviceKey' + '=' + config.service_key
     return query
 
 
@@ -24,9 +24,8 @@ def is_holiday():
     solYear = date.year
     solMonth = f'{date.month:02d}'
     params = {'solYear': solYear, 'solMonth': solMonth}
-    ServiceKey = config.service_key
 
-    request_query = get_request_query(params, ServiceKey)
+    request_query = get_request_query(params)
     # print('request:', request_query)
 
     response = requests.get(url=request_query)

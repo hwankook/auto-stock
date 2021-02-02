@@ -129,6 +129,35 @@ def get_current_cash():
     return cpCash.GetHeaderValue(9)  # 증거금 100% 주문 가능 금액
 
 
+def get_current_price(code):
+    """인자로 받은 종목의 현재가, 매도호가, 매도호가 잔량, 매수호가, 매수호가 잔량을 반환한다."""
+    cpStockMst.SetInputValue(0, code)  # 종목코드에 대한 가격 정보
+    cpStockMst.BlockRequest()
+
+    current_price = cpStockMst.GetHeaderValue(11)  # 현재가
+
+    return current_price
+
+
+def has_enough_cash(code, name, current_price=-1):
+    total_cash = int(get_current_cash())  # 100% 증거금 주문 가능 금액 조회
+    if current_price == -1:
+        current_price = get_current_price(code)
+    buy_amount = int(config.buy_amount)
+    shares = int(buy_amount // current_price)
+    if total_cash < current_price * shares:
+        shares = int(total_cash // current_price)
+        if shares == 0:
+            return False, 0
+
+    if shares == 0:
+        print_message(f'{name} {current_price:,}\n'
+                      f'종목당 주문가능금액 초과: {current_price - config.buy_amount:7,}원 초과')
+        return False, 0
+
+    return True, shares
+
+
 def get_high_volume_code():
     """거래량 상위 종목 코드를 반환한다."""
     cpVolume.SetInputValue(0, ord('4'))  # 시장구분 4: 전체, 1: 거래소, 2: 코스닥
@@ -203,11 +232,10 @@ def get_biggest_moves_code():
         code_list[code] = (vol, price, percent, name)
 
 
-def get_market_cap(codes):
-    """시가총액을 반환한다."""
-    data = {}
+def get_market_cap():
+    """시가총액 순으로 종목코드를 변환한다."""
     cpMarketEye.SetInputValue(0, [0, 4, 20])  # 0: 종목코드 4: 현재가 20: 상장주식수
-    cpMarketEye.SetInputValue(1, codes)  # 종목코드 or 종목코드 리스트
+    cpMarketEye.SetInputValue(1, list(code_list.keys()))  # 종목코드 or 종목코드 리스트
     cpMarketEye.BlockRequest()
 
     for i in range(cpMarketEye.GetHeaderValue(2)):
@@ -219,16 +247,19 @@ def get_market_cap(codes):
         if cpCodeMgr.IsBigListingStock(code):
             market_cap *= 1000
         market_cap = market_cap // 100000000
-        data[code] = (listed_stock, market_cap)
+        vol, price, percent, name = code_list[code]
+        code_list[code] = (vol, price, percent, name, market_cap)
 
-    return data
+    temp = OrderedDict(sorted(code_list.items(), key=lambda x: x[1][4], reverse=True))
+    code_list.clear()
+    code_list.update(temp)
 
 
 def print_code_list():
     """종목 코드를 출력한다."""
-    data = get_market_cap(list(code_list.keys()))
     message = '\n코드\t거래량      시가총액(억 원)  현재가(원)  대비율\t종목명\n'
-    for (code, (vol, price, percent, name)), (_, (_, market_cap)) in zip(code_list.items(), data.items()):
+    for code, item in code_list.items():
+        vol, price, percent, name, market_cap = item
         message += f'{code}\t{vol:11,}\t{market_cap:10,}\t{price:7,}\t{percent:>6.02f}\t{name:20}\n'
     print_message(message)
 
@@ -257,7 +288,7 @@ def get_stock_balance(code=''):
         stock_balance.append({
             'code': stock_code,
             'name': stock_name,
-            'qty': stock_qty,
+            'shares': stock_qty,
             'price': stock_price,
             'percentage': eval_percentage
         })
@@ -273,34 +304,24 @@ def print_stock_balance(stock_balance):
     """보유 종목을 출력한다."""
     if 0 < len(stock_balance):
         message = '주식잔고\n'
-        message += '코드\t수량  대비율\t종목명\n'
+        message += '코드\t수량  대비율\t장부가\t종목명\n'
         for stock in stock_balance:
             code = stock['code']
-            qty = stock['qty']
+            shares = stock['shares']
             percentage = stock['percentage']
             price = int(stock['price'])
             name = stock['name']
-            message += f'{code}\t{qty:>5,}\t{percentage:>5.02f}%\t{price:>,}\t{name}\n'
+            message += f'{code}\t{shares:>5,}\t{percentage:>5.02f}%\t{price:>,}\t{name}\n'
         print_message(message)
 
 
-def get_current_price(code):
-    """인자로 받은 종목의 현재가, 매도호가, 매도호가 잔량, 매수호가, 매수호가 잔량을 반환한다."""
-    cpStockMst.SetInputValue(0, code)  # 종목코드에 대한 가격 정보
-    cpStockMst.BlockRequest()
-
-    current_price = cpStockMst.GetHeaderValue(11)  # 현재가
-
-    return current_price
-
-
-def get_ohlc(code, qty):
-    """인자로 받은 종목의 OHLC 가격 정보를 qty 개수만큼 반환한다."""
+def get_ohlc(code, shares):
+    """인자로 받은 종목의 OHLC 가격 정보를 shares 개수만큼 반환한다."""
     columns = ['open', 'high', 'low', 'close']
     index, rows = [], []
     cpOhlc.SetInputValue(0, code)  # 종목코드
     cpOhlc.SetInputValue(1, ord('2'))  # 1:기간, 2:개수
-    cpOhlc.SetInputValue(4, qty)  # 요청개수
+    cpOhlc.SetInputValue(4, shares)  # 요청개수
     cpOhlc.SetInputValue(5, [0, 2, 3, 4, 5])  # 0:날짜, 2~5:시가,고가,저가,종가
     cpOhlc.SetInputValue(6, ord('D'))  # D:일단위
     cpOhlc.SetInputValue(9, ord('1'))  # 0:무수정주가, 1:수정주가
@@ -363,7 +384,7 @@ def get_movingaverage(ohlc, window):
         return None
 
 
-def sell_stock(code, name, qty):
+def sell_stock(code, name, shares):
     """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
     try:
         cpTradeUtil.TradeInit()
@@ -375,7 +396,7 @@ def sell_stock(code, name, qty):
         cpOrder.SetInputValue(1, acc)  # 계좌번호
         cpOrder.SetInputValue(2, accFlag[0])  # 주식상품 중 첫번째
         cpOrder.SetInputValue(3, code)  # 종목코드
-        cpOrder.SetInputValue(4, qty)  # 매도수량
+        cpOrder.SetInputValue(4, shares)  # 매도수량
         cpOrder.SetInputValue(7, "1")  # 조건 0:기본, 1:IOC, 2:FOK
         cpOrder.SetInputValue(8, "12")  # 호가 12:최유리, 13:최우선
 
@@ -384,7 +405,7 @@ def sell_stock(code, name, qty):
         if ret == 4:
             remain_time = cpStatus.LimitRequestRemainTime
             print_message('주의: 연속 주문 제한, 대기시간:', remain_time / 1000)
-        slack_send_message(f'`{name} {qty}주 매도 -> returned {ret}' + "`")
+        slack_send_message(f'`{name} {shares}주 매도 -> returned {ret}' + "`")
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message(f"`sell({code}) -> exception! " + str(e) + "`")
@@ -401,11 +422,11 @@ def sell_all(listWatchData):
 
             code = stock['code']
             name = stock['name']
-            qty = stock['qty']
+            shares = stock['shares']
 
             # 손익 +3%, -2% 매도
             if config.profit_rate <= percentage or percentage <= config.loss_rate:
-                sell_stock(code, name, qty)
+                sell_stock(code, name, shares)
                 continue
 
             # 주요 신호 포착될 떄 매도
@@ -414,34 +435,19 @@ def sell_all(listWatchData):
                 if item['indicator'] in indicators \
                         and indicators[item['indicator']] is False:
                     slack_send_message(f'{code_list[code][3]}: {item["remark"]}')
-                    sell_stock(code, name, qty)
+                    sell_stock(code, name, shares)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`sell_all() -> exception! " + str(e) + "`")
 
 
-def buy_stock(code, name):
+def buy_stock(code, name, shares):
     """인자로 받은 종목을 최유리 지정가 IOC 조건으로 매수한다."""
     try:
         if code in bought_list:  # 매수 완료 종목이면 더 이상 안 사도록 함수 종료
             return
 
         if config.target_buy_count < len(bought_list):
-            return
-
-        total_cash = int(get_current_cash())  # 100% 증거금 주문 가능 금액 조회
-        current_price = get_current_price(code)
-        buy_amount = int(config.buy_amount)
-        buy_qty = int(buy_amount // current_price)
-
-        if total_cash < current_price * buy_qty:
-            buy_qty = int(total_cash // current_price)
-            if buy_qty == 0:
-                return
-
-        if buy_qty == 0:
-            print_message(f'{name} {current_price:,}\n'
-                          f'종목당 주문가능금액 초과: {current_price - config.buy_amount:7,}원 초과')
             return
 
         cpTradeUtil.TradeInit()
@@ -453,7 +459,7 @@ def buy_stock(code, name):
         cpOrder.SetInputValue(1, acc)  # 계좌번호
         cpOrder.SetInputValue(2, accFlag[0])  # 상품구분 - 주식 상품 중 첫번째
         cpOrder.SetInputValue(3, code)  # 종목코드
-        cpOrder.SetInputValue(4, buy_qty)  # 매수할 수량
+        cpOrder.SetInputValue(4, shares)  # 매수할 수량
         cpOrder.SetInputValue(7, "1")  # 주문조건 0:기본, 1:IOC, 2:FOK
         cpOrder.SetInputValue(8, "12")  # 주문호가 1:보통, 3:시장가 5:조건부, 12:최유리, 13:최우선
 
@@ -466,8 +472,8 @@ def buy_stock(code, name):
             return
         time.sleep(2)
         stock_name, stock_qty = get_stock_balance(code)
-        if buy_qty <= stock_qty:
-            slack_send_message(f'{name} {buy_qty}주 매수 -> returned {ret}')
+        if shares <= stock_qty:
+            slack_send_message(f'{name} {shares}주 매수 -> returned {ret}')
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`buy_etf(" + str(code) + ") -> exception! " + str(e) + "`")
@@ -478,14 +484,17 @@ def buy_stock(code, name):
 def buy_all(listWatchData):
     """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
     try:
+
         # 주요 신호 포착될 때
         for code in listWatchData.keys():
             item = listWatchData[code]
             if item['indicator'] in indicators \
                     and indicators[item['indicator']] is True:
                 name = cpCodeMgr.CodeToName(code)
-                slack_send_message(f'{code} {name}, {item["remark"]}')
-                buy_stock(code, name)
+                enough, shares = has_enough_cash(code, name)
+                if enough:
+                    slack_send_message(f'{item["time"]} {code} {name}, {item["remark"]}')
+                    buy_stock(code, name, shares)
 
         # 매수 목표가, 5일 이동평균가, 10일 이동평균가 보다 현재가가 클 때 매수
         for code in code_list.keys():
@@ -498,8 +507,10 @@ def buy_all(listWatchData):
                     and ma5_price < current_price \
                     and ma10_price < current_price:
                 name = code_list[code][3]
-                buy_stock(code, name)
-            time.sleep(2)
+                enough, shares = has_enough_cash(code, name, current_price)
+                if enough:
+                    buy_stock(code, name, shares)
+            time.sleep(1)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`sell_all() -> exception! " + str(e) + "`")
@@ -511,6 +522,7 @@ def auto_trade():
     while True:
         get_high_volume_code()
         get_biggest_moves_code()
+        get_market_cap()
         print_code_list()
 
         t_now = datetime.now()
@@ -520,7 +532,7 @@ def auto_trade():
             total_cash = int(get_current_cash())  # 100% 증거금 주문 가능 금액 조회
             print_message(f'100% 증거금 주문가능금액: {total_cash:,}')
 
-            listWatchData = OrderedDict()
+            listWatchData = {}
             cpRpMarketWatch.Request('*', listWatchData)
 
             sell_all(listWatchData)

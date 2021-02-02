@@ -68,7 +68,10 @@ class CpEvent:
         code = self.client.GetHeaderValue(0)
 
         for i in range(self.client.GetHeaderValue(2)):
+            time = self.client.GetDataValue(0, i)
+            h, m = divmod(time, 100)
             item = {
+                'time': '%02d:%02d' % (h, m),
                 'code': code,
                 'indicator': ''
             }
@@ -120,9 +123,12 @@ class CpRpMarketWatch:
         self.cpMarketWatch.BlockRequest()
 
         for i in range(self.cpMarketWatch.GetHeaderValue(2)):
+            time = self.cpMarketWatch.GetDataValue(0, i)
+            h, m = divmod(time, 100)
             code = self.cpMarketWatch.GetDataValue(1, i)
             indicator = self.cpMarketWatch.GetDataValue(3, i)
             item = {
+                'time': '%02d:%02d' % (h, m),
                 'code': code,
                 'indicator': indicator
             }
