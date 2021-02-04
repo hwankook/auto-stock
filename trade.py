@@ -240,6 +240,8 @@ def get_balance():
     accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체, 1:주식, 2:선물/옵션
     cpBalance.SetInputValue(0, acc)  # 계좌번호
     cpBalance.SetInputValue(1, accFlag[0])  # 상품구분 - 주식 상품 중 첫번째
+
+    wait_for_request(0)
     cpBalance.BlockRequest()
 
     yield_rate = cpBalance.GetHeaderValue(3)
@@ -254,6 +256,8 @@ def get_current_cash():
     accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체, 1:주식, 2:선물/옵션
     cpCash.SetInputValue(0, acc)  # 계좌번호
     cpCash.SetInputValue(1, accFlag[0])  # 상품구분 - 주식 상품 중 첫번째
+
+    wait_for_request(0)
     cpCash.BlockRequest()
     return cpCash.GetHeaderValue(9)  # 증거금 100% 주문 가능 금액
 
@@ -262,7 +266,7 @@ def get_current_price(code):
     """인자로 받은 종목의 현재가, 매도호가, 매도호가 잔량, 매수호가, 매수호가 잔량을 반환한다."""
     cpStockMst.SetInputValue(0, code)  # 종목코드에 대한 가격 정보
 
-    wait_for_request(2)
+    wait_for_request(1)
     cpStockMst.BlockRequest()
 
     current_price = cpStockMst.GetHeaderValue(11)  # 현재가
@@ -300,6 +304,7 @@ def get_stock_balance(code=''):
     cpStockBalance.SetInputValue(1, accFlag[0])  # 상품구분 - 주식 상품 중 첫번째
     cpStockBalance.SetInputValue(2, 50)  # 요청 건수(최대 50)
 
+    wait_for_request(0)
     cpStockBalance.BlockRequest()
 
     stock_balance = {}
@@ -340,13 +345,13 @@ def print_stock_balance(stock_balance):
         print_message(message)
 
 
-def get_ohlc(code, shares):
+def get_ohlc(code, window):
     """인자로 받은 종목의 OHLC 가격 정보를 shares 개수만큼 반환한다."""
     columns = ['open', 'high', 'low', 'close']
     index, rows = [], []
     cpOhlc.SetInputValue(0, code)  # 종목코드
     cpOhlc.SetInputValue(1, ord('2'))  # 1:기간, 2:개수
-    cpOhlc.SetInputValue(4, shares)  # 요청개수
+    cpOhlc.SetInputValue(4, window)  # 요청개수
     cpOhlc.SetInputValue(5, [0, 2, 3, 4, 5])  # 0:날짜, 2~5:시가,고가,저가,종가
     cpOhlc.SetInputValue(6, ord('D'))  # D:일단위
     cpOhlc.SetInputValue(9, ord('1'))  # 0:무수정주가, 1:수정주가
@@ -540,6 +545,7 @@ def buy_all(listWatchData):
                     and ma5_price < current_price \
                     and ma10_price < current_price:
                 name = code_list[code][3]
+                print(code, name)
                 enough, shares = has_enough_cash(code, name, current_price)
                 if enough:
                     buy_stock(code, name, shares)
@@ -574,8 +580,6 @@ def auto_trade():
             sell_all(listWatchData)
 
             buy_all(listWatchData)
-        if t_now.minute % 30 == 0:  # 30분 마다 수익률 조회
-            get_balance()
 
         if t_exit < t_now:  # PM 03:20 ~ :프로그램 종료
             slack_send_message('`장 마감`')
@@ -584,6 +588,8 @@ def auto_trade():
             sys.exit(0)
 
         code_list.clear()
+
+        time.sleep(15)
 
 
 if __name__ == '__main__':
