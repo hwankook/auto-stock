@@ -486,10 +486,12 @@ def buy_stock(code, name, shares):
         # 매수 완료 종목이면 더 이상 안 사도록 리턴
         stock_balance = get_stock_balance()
         if stock_balance.get(code):
+            print_message(f'{code} {name}는(은) 이미 매수한 종목이므로 더 이상 구매하지 않습니다.')
             return
 
         # 매수 완료 종목 개수가 매수할 종목 수 이상이면 리턴
         if config.target_buy_count < len(stock_balance):
+            print_message(f'매수한 종목 수가 {len(stock_balance)}개이므로 더 이상 구매하지 않습니다.')
             return
 
         cpTradeUtil.TradeInit()
@@ -545,7 +547,6 @@ def buy_all(listWatchData):
                     and ma5_price < current_price \
                     and ma10_price < current_price:
                 name = code_list[code][3]
-                print(code, name)
                 enough, shares = has_enough_cash(code, name, current_price)
                 if enough:
                     buy_stock(code, name, shares)
@@ -555,8 +556,6 @@ def buy_all(listWatchData):
 
 
 def auto_trade():
-    get_balance()
-
     while True:
         get_high_volume_code()
         get_biggest_moves_code()
