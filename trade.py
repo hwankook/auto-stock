@@ -416,7 +416,7 @@ def get_movingaverage(ohlc, window):
         return None
 
 
-def sell_stock(code, name, shares):
+def sell_stock(code, name, shares, percentage):
     """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
     try:
         cpTradeUtil.TradeInit()
@@ -438,7 +438,7 @@ def sell_stock(code, name, shares):
             print_message('주의: 연속 주문 제한')
             wait_for_request(0)
             cpOrder.BlockRequest()
-        slack_send_message(f'`{name} {shares}주 매도 -> returned {ret}' + "`")
+        slack_send_message(f'{name} {shares} 주 매도 (손익: `{percentage:2.2f}`) -> returned {ret}')
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message(f"`sell({code}) -> exception! " + str(e) + "`")
@@ -461,10 +461,10 @@ def sell_all(listWatchData):
                 market_caps = get_market_cap(code)
                 if 100000 < market_caps[code]:
                     if 10.0 <= percentage or percentage <= -5.0:
-                        sell_stock(code, name, shares)
+                        sell_stock(code, name, shares, percentage)
                         continue
 
-                sell_stock(code, name, shares)
+                sell_stock(code, name, shares, percentage)
                 continue
 
             # 주요 신호 포착될 떄 매도
@@ -474,7 +474,7 @@ def sell_all(listWatchData):
                         and indicators[item['indicator']] is False:
                     name = cpCodeMgr.CodeToName(code)
                     slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
-                    sell_stock(code, name, shares)
+                    sell_stock(code, name, shares, percentage)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`sell_all() -> exception! " + str(e) + "`")
@@ -486,12 +486,14 @@ def buy_stock(code, name, shares):
         # 매수 완료 종목이면 더 이상 안 사도록 리턴
         stock_balance = get_stock_balance()
         if stock_balance.get(code):
-            print_message(f'{code} {name}는(은) 이미 매수한 종목이므로 더 이상 구매하지 않습니다.')
+            print_message(f'{code} {name}\n'
+                          f'이미 매수한 종목이므로 더 이상 구매하지 않습니다.')
             return
 
         # 매수 완료 종목 개수가 매수할 종목 수 이상이면 리턴
         if config.target_buy_count < len(stock_balance):
-            print_message(f'매수한 종목 수가 {len(stock_balance)}개이므로 더 이상 구매하지 않습니다.')
+            print_message(f'매수한 종목 수: {len(stock_balance)}\n'
+                          f'더 이상 구매하지 않습니다.')
             return
 
         cpTradeUtil.TradeInit()
