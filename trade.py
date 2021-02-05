@@ -274,10 +274,8 @@ def get_current_price(code):
     return current_price
 
 
-def has_enough_cash(code, name, current_price=-1):
+def has_enough_cash(current_price, name):
     total_cash = int(get_current_cash())  # 100% 증거금 주문 가능 금액 조회
-    if current_price == -1:
-        current_price = get_current_price(code)
     buy_amount = int(config.buy_amount)
     shares = int(buy_amount // current_price)
     if total_cash < current_price * shares:
@@ -343,6 +341,33 @@ def print_stock_balance(stock_balance):
             name = stock['name']
             message += f'{code}\t{shares:>5,}\t{percentage:>5.02f}%\t{price:>,}\t{name}\n'
         print_message(message)
+
+
+def get_transaction_history(code=""):
+    """ 금일 계좌별 주문/체결 내역 조회 데이터를 요청하고 수신한다."""
+    cpTradeUtil.TradeInit()
+    acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
+    accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체, 1:주식, 2:선물/옵션
+    cpTrade.SetInputValue(0, acc)  # 계좌번호
+    cpTrade.SetInputValue(1, accFlag[0])  # 상품구분 - 주식 상품 중 첫번째
+    cpTrade.SetInputValue(2, code)  # 종목코드[default:""] - 생략 시 전종목에 대해서 조회가됨
+
+    wait_for_request(0)
+    cpTrade.BlockRequest()
+
+    history = {}
+    for i in range(cpTrade.GetHeaderValue(6)):
+        code = cpTrade.GetDataValue(3, i)  # 종목코드
+        name = cpTrade.GetDataValue(4, i)  # 종목이름
+        quantity = cpTrade.GetDataValue(9, i)  # 총체결수량
+        price = cpTrade.GetDataValue(11, i)  # 체결단가
+        history[code] = {
+            'name': name,
+            'quantity': quantity,
+            'price': price
+        }
+
+    return history
 
 
 def get_ohlc(code, window):
@@ -480,7 +505,7 @@ def sell_all(listWatchData):
         slack_send_message("`sell_all() -> exception! " + str(e) + "`")
 
 
-def buy_stock(code, name, shares):
+def buy_stock(code, name, shares, current_price):
     """인자로 받은 종목을 최유리 지정가 IOC 조건으로 매수한다."""
     try:
         # 매수 완료 종목이면 더 이상 안 사도록 리턴
@@ -495,6 +520,16 @@ def buy_stock(code, name, shares):
             print_message(f'매수한 종목 수: {len(stock_balance)}\n'
                           f'더 이상 구매하지 않습니다.')
             return
+
+        # 금일 계좌에 체결내역이 있을 경우 체결단가가 현재가보다 높으면 구매하지 않음
+        history = get_transaction_history(code)
+        if history[code]:
+            if current_price < history[code]['price']:
+                print_message(f'거래 내역에 해당 종목이 있습니다.\n'
+                              f'{code} {name}\n'
+                              f'체결단가: {history[code]["price"]:,}'
+                              f'현재가: {current_price:,}')
+                return
 
         cpTradeUtil.TradeInit()
         acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
@@ -534,9 +569,10 @@ def buy_all(listWatchData):
                     and indicators[item['indicator']] is True:
                 name = cpCodeMgr.CodeToName(code)
                 slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
-                enough, shares = has_enough_cash(code, name)
+                current_price = get_current_price(code)
+                enough, shares = has_enough_cash(current_price, name)
                 if enough:
-                    buy_stock(code, name, shares)
+                    buy_stock(code, name, shares, current_price)
 
         # 매수 목표가, 5일 이동평균가, 10일 이동평균가 보다 현재가가 클 때 매수
         for code in code_list.keys():
@@ -549,9 +585,9 @@ def buy_all(listWatchData):
                     and ma5_price < current_price \
                     and ma10_price < current_price:
                 name = code_list[code][3]
-                enough, shares = has_enough_cash(code, name, current_price)
+                enough, shares = has_enough_cash(current_price, name)
                 if enough:
-                    buy_stock(code, name, shares)
+                    buy_stock(code, name, shares, current_price)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`sell_all() -> exception! " + str(e) + "`")
@@ -616,6 +652,7 @@ if __name__ == '__main__':
         cpStockMst = win32com.client.Dispatch('DsCbo1.StockMst')
         cpOhlc = win32com.client.Dispatch('CpSysDib.StockChart')
         cpOrder = win32com.client.Dispatch('CpTrade.CpTd0311')
+        cpTrade = win32com.client.Dispatch('CpTrade.CpTd5341')
         cpRpMarketWatch = CpRpMarketWatch()
 
         print_message('시작 시간')
