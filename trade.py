@@ -6,6 +6,7 @@ from collections import OrderedDict
 from datetime import datetime
 
 import pandas as pd
+import schedule
 import win32com.client
 from slacker import Slacker
 
@@ -100,8 +101,6 @@ def check_creon_system():
     if win32com.client.Dispatch('CpTrade.CpTdUtil').TradeInit(0) != 0:
         print_message('check_creon_system() : init trade -> FAILED')
         return False
-
-    return True
 
 
 def wait_for_request(check_type):
@@ -232,6 +231,16 @@ def print_code_list():
         vol, price, percent, name, market_cap = item
         message += f'{code}\t{vol:11,}\t{market_cap:10,}\t{price:7,}\t{percent:>6.02f}\t{name:20}\n'
     print_message(message)
+
+
+def get_code_list():
+    get_high_volume_code()
+    get_biggest_moves_code()
+    market_caps = get_market_cap(list(code_list.keys()))
+    temp = sort_code_list(market_caps)
+    code_list.clear()
+    code_list.update(temp)
+    print_code_list()
 
 
 def get_balance():
@@ -599,37 +608,25 @@ def buy_all(listWatchData):
 
 
 def auto_trade():
-    while True:
-        get_high_volume_code()
-        get_biggest_moves_code()
-        market_caps = get_market_cap(list(code_list.keys()))
-        temp = sort_code_list(market_caps)
-        code_list.clear()
-        code_list.update(temp)
-        print_code_list()
+    total_cash = int(get_current_cash())  # 100% 증거금 주문 가능 금액 조회
+    print_message(f'100% 증거금 주문가능금액: {total_cash:,}')
 
-        t_now = datetime.now()
-        t_start = t_now.replace(hour=9, minute=0, second=0, microsecond=0)
-        t_exit = t_now.replace(hour=15, minute=30, second=0, microsecond=0)
-        if t_start < t_now < t_exit:  # AM 09:05 ~ PM 03:15 : 매수 & 매도
-            total_cash = int(get_current_cash())  # 100% 증거금 주문 가능 금액 조회
-            print_message(f'100% 증거금 주문가능금액: {total_cash:,}')
+    listWatchData = {}
+    wait_for_request(2)
+    cpRpMarketWatch.Request('*', listWatchData)
 
-            listWatchData = {}
-            wait_for_request(2)
-            cpRpMarketWatch.Request('*', listWatchData)
+    sell_all(listWatchData)
 
-            sell_all(listWatchData)
+    buy_all(listWatchData)
 
-            buy_all(listWatchData)
+    code_list.clear()
 
-        if t_exit < t_now:  # PM 03:20 ~ :프로그램 종료
-            slack_send_message('`장 마감`')
-            time.sleep(1)
-            get_balance()
-            sys.exit(0)
 
-        code_list.clear()
+def close():
+    slack_send_message('`장 마감`')
+    time.sleep(1)
+    get_balance()
+    sys.exit(0)
 
 
 if __name__ == '__main__':
@@ -660,7 +657,16 @@ if __name__ == '__main__':
 
         print_message('시작 시간')
 
-        auto_trade()
+        get_code_list()
+
+        schedule.every().day.at("09:00").do(auto_trade)
+        schedule.every(10).minutes.do(get_code_list)
+        schedule.every(10).minutes.do(get_balance)
+        schedule.every().day.at("15:20").do(close)
+
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
     except Exception as ex:
         traceback.print_exc(file=sys.stdout)
         print_message('`main -> exception! ' + str(ex) + '`')
