@@ -523,7 +523,7 @@ def buy_stock(code, name, shares, current_price):
 
         # 금일 계좌에 체결내역이 있을 경우 체결단가가 현재가보다 높으면 구매하지 않음
         history = get_transaction_history(code)
-        if history[code]:
+        if code in history.keys():
             if current_price < history[code]['price']:
                 print_message(f'거래 내역에 해당 종목이 있습니다.\n'
                               f'{code} {name}\n'
