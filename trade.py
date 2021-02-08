@@ -67,6 +67,7 @@ indicators = {
 slack = Slacker(config.token)
 
 code_list = OrderedDict()
+ohlc_list = {}
 
 
 def print_message(*args):
@@ -576,7 +577,10 @@ def buy_all(listWatchData):
 
         # 매수 목표가, 5일 이동평균가, 10일 이동평균가 보다 현재가가 클 때 매수
         for code in code_list.keys():
-            ohlc = get_ohlc(code, 10)
+            if code in ohlc_list.keys():
+                ohlc = ohlc_list[code]
+            else:
+                ohlc = get_ohlc(code, 10)
             target_price = get_target_price_to_buy(ohlc)  # 매수 목표가
             ma5_price = get_movingaverage(ohlc, 5)  # 5일 이동평균가
             ma10_price = get_movingaverage(ohlc, 10)  # 10일 이동평균가
@@ -625,8 +629,6 @@ def auto_trade():
             sys.exit(0)
 
         code_list.clear()
-
-        time.sleep(15)
 
 
 if __name__ == '__main__':
