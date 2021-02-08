@@ -581,6 +581,8 @@ def buy_all(listWatchData):
                 ohlc = ohlc_list[code]
             else:
                 ohlc = get_ohlc(code, 10)
+                ohlc_list[code] = ohlc
+
             target_price = get_target_price_to_buy(ohlc)  # 매수 목표가
             ma5_price = get_movingaverage(ohlc, 5)  # 5일 이동평균가
             ma10_price = get_movingaverage(ohlc, 10)  # 10일 이동평균가
