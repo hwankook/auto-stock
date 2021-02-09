@@ -107,6 +107,7 @@ def check_creon_system():
 
 
 def wait_for_request(check_type):
+    """크레온 플러스 시스템 요청을 대기한다."""
     remain_count = cpStatus.GetLimitRemainCount(check_type)  # 0: 주문 관련 1: 시세 요청 관련 2: 실시간 요청 관련
     if 0 < remain_count:
         return
@@ -198,7 +199,7 @@ def get_biggest_moves_code():
 
 
 def get_market_cap(codes):
-    """시가총액 순으로 종목코드를 변환한다."""
+    """시가총액 순으로 종목 코드를 변환한다."""
     cpMarketEye.SetInputValue(0, [0, 4, 20])  # 0: 종목코드 4: 현재가 20: 상장주식수
     cpMarketEye.SetInputValue(1, codes)  # 종목코드 or 종목코드 리스트
 
@@ -221,6 +222,7 @@ def get_market_cap(codes):
 
 
 def sort_code_list(market_caps: OrderedDict):
+    """시가총액 상위 순으로 종목 코드를 정렬한다."""
     for (code, (vol, price, percent, name)), (code2, (market_cap)) in zip(code_list.items(), market_caps.items()):
         if code == code2:
             code_list[code] = (vol, price, percent, name, market_cap)
@@ -237,6 +239,7 @@ def print_code_list():
 
 
 def get_code_list():
+    """종목 코드를 가져온다."""
     get_high_volume_code()
     get_biggest_moves_code()
     market_caps = get_market_cap(list(code_list.keys()))
@@ -247,6 +250,7 @@ def get_code_list():
 
 
 def get_watch_data():
+    """특징주 포착을 수신한다."""
     wait_for_request(2)
     cpRpMarketWatch.Request('*', listWatchData)
     for code in listWatchData.keys():
@@ -283,6 +287,7 @@ def get_current_price(code):
 
 
 def has_enough_cash(current_price, name):
+    """매수할 때 100% 증거금이 충분한지 조회한다."""
     total_cash = int(get_current_cash())  # 100% 증거금 주문 가능 금액 조회
     buy_amount = int(config.buy_amount)
     shares = int(buy_amount // current_price)
@@ -302,7 +307,7 @@ def has_enough_cash(current_price, name):
 
 
 def get_stock_balance(code=''):
-    """인자로 받은 종목의 종목명과 수량을 반환한다."""
+    """인자로 받은 종목의 종목명과 수량, 장부가를 반환한다."""
     cpTradeUtil.TradeInit()
     acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
     accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체, 1:주식, 2:선물/옵션
@@ -484,7 +489,7 @@ def sell_all():
             name = stock['name']
             shares = stock['shares']
 
-            # 손익 +1.3%, -2% 매도
+            # 손익 profit_rate%, 매도 loss_rate%
             if config.profit_rate <= percentage or percentage <= config.loss_rate:
                 # 시가총액 10조 이상이면 +10%, -5% 매도
                 market_caps = get_market_cap(code)
@@ -564,7 +569,7 @@ def buy_stock(code, name, shares, current_price):
 
 
 def buy_all():
-    """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
+    """주요 신호가 포착되거나, 종목 코드의 목표가 보다 현재가가 클 때 매수한다."""
     try:
         # 주요 신호 포착될 때
         for code in listWatchData.keys():
@@ -618,6 +623,7 @@ def get_balance():
 
 
 def auto_trade():
+    """자동 매도, 매수, 종료한다."""
     t_now = datetime.now()
     t_start = t_now.replace(hour=9, minute=0, second=0, microsecond=0)
     t_exit = t_now.replace(hour=15, minute=30, second=0, microsecond=0)
