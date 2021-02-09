@@ -480,7 +480,7 @@ def sell_stock(code, name, shares, percentage):
             print_message('주의: 연속 주문 제한')
             wait_for_request(0)
             cpOrder.BlockRequest()
-        slack_send_message(f'{name} {shares} 주 매도 (손익: `{percentage:2.2f}`) -> returned {ret}')
+        slack_send_message(f'{name} {shares}주 매도 (손익: `{percentage:2.2f}`) -> returned {ret}')
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message(f"`sell({code}) -> exception! " + str(e) + "`")
@@ -544,7 +544,7 @@ def buy_stock(code, name, shares, current_price):
             # 체결내역이 정상주문에 매수일 경우에
             for item in history[code]:
                 if '정상주문' == item["state"] \
-                        and 2 == item["order"]:
+                        and '2' == item["order"]:
                     print_message(f'거래 내역에 해당 종목이 있습니다.\n'
                                   f'{code} {name}\n'
                                   f'체결단가: {item["price"]:,}\n'
