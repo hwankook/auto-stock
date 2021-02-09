@@ -487,7 +487,7 @@ def sell_stock(code, name, shares, percentage):
         slack_send_message(f"`sell({code}) -> exception! " + str(e) + "`")
 
 
-def sell_all(listWatchData):
+def sell_all():
     """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
     try:
         stock_balance = get_stock_balance()
@@ -576,7 +576,7 @@ def buy_stock(code, name, shares, current_price):
         slack_send_message("`buy_etf(" + str(code) + ") -> exception! " + str(e) + "`")
 
 
-def buy_all(listWatchData):
+def buy_all():
     """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
     try:
         # 주요 신호 포착될 때
@@ -620,9 +620,9 @@ def auto_trade():
     t_start = t_now.replace(hour=9, minute=0, second=0, microsecond=0)
     t_exit = t_now.replace(hour=15, minute=30, second=0, microsecond=0)
     if t_start < t_now < t_exit:  # AM 09:05 ~ PM 03:15 : 매수 & 매도
-        sell_all(listWatchData)
+        sell_all()
 
-        buy_all(listWatchData)
+        buy_all()
 
         code_list.clear()
 
@@ -665,9 +665,6 @@ if __name__ == '__main__':
         get_code_list()
 
         get_watch_data()
-
-        total_cash = int(get_current_cash())  # 100% 증거금 주문 가능 금액 조회
-        print_message(f'100% 증거금 주문가능금액: {total_cash:,}')
 
         schedule.every(1).seconds.do(auto_trade)
         schedule.every(10).minutes.do(get_code_list)
