@@ -2,7 +2,7 @@ import ctypes
 import sys
 import time
 import traceback
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from datetime import datetime
 
 import pandas as pd
@@ -364,7 +364,7 @@ def get_transaction_history(code=""):
     wait_for_request(0)
     cpTrade.BlockRequest()
 
-    history = {}
+    history = defaultdict(list)
     for i in range(cpTrade.GetHeaderValue(6)):
         code = cpTrade.GetDataValue(3, i)  # 종목코드
         name = cpTrade.GetDataValue(4, i)  # 종목이름
@@ -372,13 +372,13 @@ def get_transaction_history(code=""):
         price = cpTrade.GetDataValue(11, i)  # 체결단가
         state = cpTrade.GetDataValue(13, i)  # 정정취소구분내용
         order = cpTrade.GetDataValue(35, i)  # 매매구분코드 1: 매도, 2: 매수
-        history[code] = {
+        history[code].append({
             'name': name,
             'quantity': quantity,
             'price': price,
             'state': state,
             'order': order
-        }
+        })
 
     return history
 
@@ -538,13 +538,14 @@ def buy_stock(code, name, shares, current_price):
         history = get_transaction_history(code)
         if code in history.keys():
             # 체결내역이 정상주문에 매수일 경우에
-            if '정상주문' == history[code]["state"] \
-                    and 2 == history[code]["order"]:
-                print_message(f'거래 내역에 해당 종목이 있습니다.\n'
-                              f'{code} {name}\n'
-                              f'체결단가: {history[code]["price"]:,}\n'
-                              f'현재가: {current_price:,}')
-                return
+            for item in history[code]:
+                if '정상주문' == item["state"] \
+                        and 2 == item["order"]:
+                    print_message(f'거래 내역에 해당 종목이 있습니다.\n'
+                                  f'{code} {name}\n'
+                                  f'체결단가: {item["price"]:,}\n'
+                                  f'현재가: {current_price:,}')
+                    return
 
         cpTradeUtil.TradeInit()
         acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
