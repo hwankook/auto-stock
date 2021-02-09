@@ -322,7 +322,7 @@ def get_stock_balance(code=''):
         eval_percentage = cpStockBalance.GetDataValue(11, i)  # 평가손익
 
         if stock_code == code:
-            return stock_name, stock_qty
+            return stock_name, stock_qty, stock_price
 
         stock_balance[stock_code] = {
             'name': stock_name,
@@ -555,9 +555,9 @@ def buy_stock(code, name, shares, current_price):
             print_message('주의: 연속 주문 제한')
             wait_for_request(0)
             cpOrder.BlockRequest()
-        stock_name, stock_qty = get_stock_balance(code)
+        stock_name, stock_qty, stock_price = get_stock_balance(code)
         if shares <= stock_qty:
-            slack_send_message(f'{name} {shares}주 매수 -> returned {ret}')
+            slack_send_message(f'{name} {stock_price:,} {shares}주 매수 -> returned {ret}')
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`buy_etf(" + str(code) + ") -> exception! " + str(e) + "`")
