@@ -257,22 +257,6 @@ def get_watch_data():
             slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
 
 
-def get_balance():
-    """수익률, 잔량평가손익, 매도실현손익을 파이썬 셸과 동시에 슬랙으로 출력한다."""
-    cpTradeUtil.TradeInit()
-    acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
-    accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체, 1:주식, 2:선물/옵션
-    cpBalance.SetInputValue(0, acc)  # 계좌번호
-    cpBalance.SetInputValue(1, accFlag[0])  # 상품구분 - 주식 상품 중 첫번째
-
-    wait_for_request(0)
-    cpBalance.BlockRequest()
-
-    yield_rate = cpBalance.GetHeaderValue(3)
-    yield_rate = 0.0 if yield_rate == '' else float(yield_rate)
-    slack_send_message(f'수익률: `{yield_rate:>2.2f}`%')
-
-
 def get_current_cash():
     """증거금 100% 주문 가능 금액을 반환한다."""
     cpTradeUtil.TradeInit()
@@ -631,12 +615,27 @@ def auto_trade():
 
         code_list.clear()
 
+    elif t_exit < t_now:  # PM 03:20 ~ :프로그램 종료
+        slack_send_message('`장 마감`')
+        time.sleep(1)
+        get_balance()
+        sys.exit(0)
 
-def close():
-    slack_send_message('`장 마감`')
-    time.sleep(1)
-    get_balance()
-    sys.exit(0)
+
+def get_balance():
+    """수익률, 잔량평가손익, 매도실현손익을 파이썬 셸과 동시에 슬랙으로 출력한다."""
+    cpTradeUtil.TradeInit()
+    acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
+    accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체, 1:주식, 2:선물/옵션
+    cpBalance.SetInputValue(0, acc)  # 계좌번호
+    cpBalance.SetInputValue(1, accFlag[0])  # 상품구분 - 주식 상품 중 첫번째
+
+    wait_for_request(0)
+    cpBalance.BlockRequest()
+
+    yield_rate = cpBalance.GetHeaderValue(3)
+    yield_rate = 0.0 if yield_rate == '' else float(yield_rate)
+    slack_send_message(f'수익률: `{yield_rate:>2.2f}`%')
 
 
 if __name__ == '__main__':
@@ -668,14 +667,11 @@ if __name__ == '__main__':
         print_message('시작 시간')
 
         get_code_list()
-
         get_watch_data()
-
-        schedule.every(1).seconds.do(auto_trade)
         schedule.every(10).minutes.do(get_code_list)
         schedule.every(10).minutes.do(get_watch_data)
-        schedule.every(10).minutes.do(get_balance)
-        schedule.every().day.at("15:20").do(close)
+
+        schedule.every(1).seconds.do(auto_trade)
 
         while True:
             schedule.run_pending()
