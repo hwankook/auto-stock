@@ -604,6 +604,22 @@ def buy_all():
         slack_send_message("`sell_all() -> exception! " + str(e) + "`")
 
 
+def get_balance():
+    """수익률, 잔량평가손익, 매도실현손익을 파이썬 셸과 동시에 슬랙으로 출력한다."""
+    cpTradeUtil.TradeInit()
+    acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
+    accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체, 1:주식, 2:선물/옵션
+    cpBalance.SetInputValue(0, acc)  # 계좌번호
+    cpBalance.SetInputValue(1, accFlag[0])  # 상품구분 - 주식 상품 중 첫번째
+
+    wait_for_request(0)
+    cpBalance.BlockRequest()
+
+    yield_rate = cpBalance.GetHeaderValue(3)
+    yield_rate = 0.0 if yield_rate == '' else float(yield_rate)
+    slack_send_message(f'수익률: `{yield_rate:>2.2f}`%')
+    
+
 def auto_trade():
     t_now = datetime.now()
     t_start = t_now.replace(hour=9, minute=0, second=0, microsecond=0)
@@ -620,22 +636,6 @@ def auto_trade():
         time.sleep(1)
         get_balance()
         sys.exit(0)
-
-
-def get_balance():
-    """수익률, 잔량평가손익, 매도실현손익을 파이썬 셸과 동시에 슬랙으로 출력한다."""
-    cpTradeUtil.TradeInit()
-    acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
-    accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체, 1:주식, 2:선물/옵션
-    cpBalance.SetInputValue(0, acc)  # 계좌번호
-    cpBalance.SetInputValue(1, accFlag[0])  # 상품구분 - 주식 상품 중 첫번째
-
-    wait_for_request(0)
-    cpBalance.BlockRequest()
-
-    yield_rate = cpBalance.GetHeaderValue(3)
-    yield_rate = 0.0 if yield_rate == '' else float(yield_rate)
-    slack_send_message(f'수익률: `{yield_rate:>2.2f}`%')
 
 
 if __name__ == '__main__':
