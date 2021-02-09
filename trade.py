@@ -335,7 +335,11 @@ def get_stock_balance(code=''):
             'price': stock_price,
             'percentage': eval_percentage
         }
-    return stock_balance
+    if code != '':
+        stock_name = cpStockCode.CodeToName(code)
+        return stock_name, 0, 0
+    else:
+        return stock_balance
 
 
 def print_stock_balance(stock_balance):
