@@ -648,24 +648,32 @@ def auto_trade():
     """자동 매도, 매수, 종료한다."""
     t_now = datetime.now()
     t_start = t_now.replace(hour=9, minute=0, second=0, microsecond=0)
-    t_sell = t_now.replace(hour=9, minute=30, second=0, microsecond=0)
-    t_buy = t_now.replace(hour=15, minute=00, second=0, microsecond=0)
+    t_sell = t_now.replace(hour=9, minute=10, second=0, microsecond=0)
+    t_buy = t_now.replace(hour=9, minute=10, second=0, microsecond=0)
+    t_end = t_now.replace(hour=9, minute=30, second=0, microsecond=0)
+    t_last = t_now.replace(hour=15, minute=00, second=0, microsecond=0)
     t_exit = t_now.replace(hour=15, minute=30, second=0, microsecond=0)
 
-    if t_start < t_now < t_exit:  # AM 09:00 ~ PM 15:30 : 매도 & 매수
+    # AM 09:00 ~ PM 15:30 : 매도 & 매수
+    if t_start < t_now < t_exit:
         sell_watch_data()
         buy_watch_data()
 
-    if t_start < t_now < t_sell:  # AM 09:00 ~ PM 09:30 : 매도
+    # AM 09:00 ~ PM 09:10 : 매도
+    if t_start < t_now < t_sell:
         sell_all()
 
-    elif t_buy < t_now < t_exit:  # AM 15:00 ~ PM 15:30 : 매수
+    # AM 09:10 ~ AM 09:30 : 매수
+    # PM 15:00 ~ PM 15:30 : 매수
+    elif t_buy < t_now < t_end or \
+            t_last < t_now < t_exit:
         get_code_list()
         buy_all()
         code_list.clear()
         time.sleep(15)
 
-    elif t_exit < t_now:  # PM 15:30 ~ :프로그램 종료
+    # PM 15:30 ~ :프로그램 종료
+    elif t_exit < t_now:
         slack_send_message('`장 마감`')
         time.sleep(1)
         get_balance()
