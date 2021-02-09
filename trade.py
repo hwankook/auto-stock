@@ -330,11 +330,7 @@ def get_stock_balance(code=''):
             'price': stock_price,
             'percentage': eval_percentage
         }
-    if code != '':
-        stock_name = cpStockCode.CodeToName(code)
-        return stock_name, 0
-    else:
-        return stock_balance
+    return stock_balance
 
 
 def print_stock_balance(stock_balance):
@@ -532,11 +528,12 @@ def buy_stock(code, name, shares, current_price):
         # 금일 계좌에 체결내역이 있을 경우 체결단가 보다 현재가가 높으면 구매하지 않음
         history = get_transaction_history(code)
         if code in history.keys():
-            print_message(f'거래 내역에 해당 종목이 있습니다.\n'
-                          f'{code} {name}\n'
-                          f'체결단가: {history[code]["price"]:,}\n'
-                          f'현재가: {current_price:,}')
-            return
+            if 0 < history[code]["price"]:
+                print_message(f'거래 내역에 해당 종목이 있습니다.\n'
+                              f'{code} {name}\n'
+                              f'체결단가: {history[code]["price"]:,}\n'
+                              f'현재가: {current_price:,}')
+                return
 
         cpTradeUtil.TradeInit()
         acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
@@ -618,7 +615,7 @@ def get_balance():
     yield_rate = cpBalance.GetHeaderValue(3)
     yield_rate = 0.0 if yield_rate == '' else float(yield_rate)
     slack_send_message(f'수익률: `{yield_rate:>2.2f}`%')
-    
+
 
 def auto_trade():
     t_now = datetime.now()
