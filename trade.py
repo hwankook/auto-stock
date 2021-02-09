@@ -370,10 +370,14 @@ def get_transaction_history(code=""):
         name = cpTrade.GetDataValue(4, i)  # 종목이름
         quantity = cpTrade.GetDataValue(9, i)  # 총체결수량
         price = cpTrade.GetDataValue(11, i)  # 체결단가
+        state = cpTrade.GetDataValue(13, i)  # 정정취소구분내용
+        order = cpTrade.GetDataValue(35, i)  # 매매구분코드 1: 매도, 2: 매수
         history[code] = {
             'name': name,
             'quantity': quantity,
-            'price': price
+            'price': price,
+            'state': state,
+            'order': order
         }
 
     return history
@@ -533,7 +537,9 @@ def buy_stock(code, name, shares, current_price):
         # 금일 계좌에 체결내역이 있을 경우 체결단가 보다 현재가가 높으면 구매하지 않음
         history = get_transaction_history(code)
         if code in history.keys():
-            if 0 < history[code]["price"]:
+            # 체결내역이 정상주문에 매수일 경우에
+            if '정상주문' == history[code]["state"] \
+                    and 2 == history[code]["order"]:
                 print_message(f'거래 내역에 해당 종목이 있습니다.\n'
                               f'{code} {name}\n'
                               f'체결단가: {history[code]["price"]:,}\n'
@@ -565,7 +571,7 @@ def buy_stock(code, name, shares, current_price):
             slack_send_message(f'{name} {stock_price:,} {shares}주 매수 -> returned {ret}')
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
-        slack_send_message("`buy_etf(" + str(code) + ") -> exception! " + str(e) + "`")
+        slack_send_message("`buy_stock(" + str(code) + ") -> exception! " + str(e) + "`")
 
 
 def buy_all():
