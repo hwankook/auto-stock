@@ -602,7 +602,7 @@ def buy_all(listWatchData):
             target_price = get_target_price_to_buy(ohlc)  # 매수 목표가
             ma5_price = get_movingaverage(ohlc, 5)  # 5일 이동평균가
             ma10_price = get_movingaverage(ohlc, 10)  # 10일 이동평균가
-            current_price = int(code_list[code][1])
+            current_price = get_current_price(code)
             if target_price < current_price \
                     and ma5_price < current_price \
                     and ma10_price < current_price:
