@@ -68,6 +68,7 @@ indicators = {
 slack = Slacker(config.token)
 
 code_list = OrderedDict()
+listWatchData = {}
 ohlc_list = {}
 
 
@@ -101,6 +102,8 @@ def check_creon_system():
     if win32com.client.Dispatch('CpTrade.CpTdUtil').TradeInit(0) != 0:
         print_message('check_creon_system() : init trade -> FAILED')
         return False
+
+    return True
 
 
 def wait_for_request(check_type):
@@ -241,6 +244,11 @@ def get_code_list():
     code_list.clear()
     code_list.update(temp)
     print_code_list()
+
+
+def get_watch_data():
+    wait_for_request(2)
+    cpRpMarketWatch.Request('*', listWatchData)
 
 
 def get_balance():
@@ -608,18 +616,15 @@ def buy_all(listWatchData):
 
 
 def auto_trade():
-    total_cash = int(get_current_cash())  # 100% 증거금 주문 가능 금액 조회
-    print_message(f'100% 증거금 주문가능금액: {total_cash:,}')
+    t_now = datetime.now()
+    t_start = t_now.replace(hour=9, minute=0, second=0, microsecond=0)
+    t_exit = t_now.replace(hour=15, minute=30, second=0, microsecond=0)
+    if t_start < t_now < t_exit:  # AM 09:05 ~ PM 03:15 : 매수 & 매도
+        sell_all(listWatchData)
 
-    listWatchData = {}
-    wait_for_request(2)
-    cpRpMarketWatch.Request('*', listWatchData)
+        buy_all(listWatchData)
 
-    sell_all(listWatchData)
-
-    buy_all(listWatchData)
-
-    code_list.clear()
+        code_list.clear()
 
 
 def close():
@@ -659,14 +664,19 @@ if __name__ == '__main__':
 
         get_code_list()
 
-        schedule.every().day.at("09:00").do(auto_trade)
+        get_watch_data()
+
+        total_cash = int(get_current_cash())  # 100% 증거금 주문 가능 금액 조회
+        print_message(f'100% 증거금 주문가능금액: {total_cash:,}')
+
+        schedule.every(1).seconds.do(auto_trade)
         schedule.every(10).minutes.do(get_code_list)
+        schedule.every(10).minutes.do(get_watch_data)
         schedule.every(10).minutes.do(get_balance)
         schedule.every().day.at("15:20").do(close)
 
         while True:
             schedule.run_pending()
-            time.sleep(1)
     except Exception as ex:
         traceback.print_exc(file=sys.stdout)
         print_message('`main -> exception! ' + str(ex) + '`')

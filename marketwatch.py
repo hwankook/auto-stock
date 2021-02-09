@@ -113,6 +113,8 @@ class CpRpMarketWatch:
         self.cpMarketWatchS = CpMarketWatchS()
 
     def Request(self, code, listWatchData: OrderedDict):
+        listWatchData.clear()
+
         self.cpMarketWatchS.Unsubscribe()
 
         self.cpMarketWatch.SetInputValue(0, code)
