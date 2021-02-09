@@ -573,7 +573,7 @@ def buy_stock(code, name, shares, current_price):
             cpOrder.BlockRequest()
         stock_name, stock_qty, stock_price = get_stock_balance(code)
         if shares <= stock_qty:
-            slack_send_message(f'{name} {stock_price:,} {shares}주 매수 -> returned {ret}')
+            slack_send_message(f'{name} {stock_price:,}원 {shares}주 매수 -> returned {ret}')
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`buy_stock(" + str(code) + ") -> exception! " + str(e) + "`")
