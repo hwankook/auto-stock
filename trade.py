@@ -486,42 +486,6 @@ def sell_stock(code, name, shares, percentage):
         slack_send_message(f"`sell({code}) -> exception! " + str(e) + "`")
 
 
-def sell_all():
-    """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
-    try:
-        stock_balance = get_stock_balance()
-        print_stock_balance(stock_balance)
-
-        for code, stock in stock_balance.items():
-            percentage = stock['percentage']
-            name = stock['name']
-            shares = stock['shares']
-
-            # 손익 profit_rate%, 매도 loss_rate%
-            if config.profit_rate <= percentage or percentage <= config.loss_rate:
-                # 시가총액 10조 이상이면 +10%, -5% 매도
-                market_caps = get_market_cap(code)
-                if 100000 < market_caps[code]:
-                    if 10.0 <= percentage or percentage <= -5.0:
-                        sell_stock(code, name, shares, percentage)
-                        continue
-
-                sell_stock(code, name, shares, percentage)
-                continue
-
-            # 주요 신호 포착될 떄 매도
-            if code in listWatchData.keys():
-                item = listWatchData[code]
-                if item['indicator'] in indicators \
-                        and indicators[item['indicator']] is False:
-                    name = cpCodeMgr.CodeToName(code)
-                    slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
-                    sell_stock(code, name, shares, percentage)
-    except Exception as e:
-        traceback.print_exc(file=sys.stdout)
-        slack_send_message("`sell_all() -> exception! " + str(e) + "`")
-
-
 def buy_stock(code, name, shares, current_price):
     """인자로 받은 종목을 최유리 지정가 IOC 조건으로 매수한다."""
     try:
@@ -579,10 +543,24 @@ def buy_stock(code, name, shares, current_price):
         slack_send_message("`buy_stock(" + str(code) + ") -> exception! " + str(e) + "`")
 
 
-def buy_all():
-    """주요 신호가 포착되거나, 종목 코드의 목표가 보다 현재가가 클 때 매수한다."""
+def sell_watch_data(code, percentage, shares):
+    """주요 신호 포착될 때 매도한다."""
     try:
-        # 주요 신호 포착될 때
+        if code in listWatchData.keys():
+            item = listWatchData[code]
+            if item['indicator'] in indicators \
+                    and indicators[item['indicator']] is False:
+                name = cpCodeMgr.CodeToName(code)
+                slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
+                sell_stock(code, name, shares, percentage)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`sell_watch_data() -> exception! " + str(e) + "`")
+
+
+def buy_watch_data():
+    """주요 신호 포착될 때 매수한다."""
+    try:
         for code in listWatchData.keys():
             item = listWatchData[code]
             if item['indicator'] in indicators \
@@ -592,7 +570,40 @@ def buy_all():
                 enough, shares = has_enough_cash(current_price, name)
                 if enough:
                     buy_stock(code, name, shares, current_price)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`buy_watch_data() -> exception! " + str(e) + "`")
 
+
+def sell_all():
+    """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
+    try:
+        stock_balance = get_stock_balance()
+        print_stock_balance(stock_balance)
+
+        for code, stock in stock_balance.items():
+            percentage = stock['percentage']
+            name = stock['name']
+            shares = stock['shares']
+
+            # 손익 profit_rate%, 매도 loss_rate%
+            if config.profit_rate <= percentage or percentage <= config.loss_rate:
+                # 시가총액 10조 이상이면 +10%, -5% 매도
+                market_caps = get_market_cap(code)
+                if 100000 < market_caps[code]:
+                    if 10.0 <= percentage or percentage <= -5.0:
+                        sell_stock(code, name, shares, percentage)
+                        continue
+
+                sell_stock(code, name, shares, percentage)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`sell_all() -> exception! " + str(e) + "`")
+
+
+def buy_all():
+    """주요 신호가 포착되거나, 종목 코드의 목표가 보다 현재가가 클 때 매수한다."""
+    try:
         # 매수 목표가, 5일 이동평균가, 10일 이동평균가 보다 현재가가 클 때 매수
         for code in code_list.keys():
             if code in ohlc_list.keys():
@@ -637,15 +648,24 @@ def auto_trade():
     """자동 매도, 매수, 종료한다."""
     t_now = datetime.now()
     t_start = t_now.replace(hour=9, minute=0, second=0, microsecond=0)
+    t_sell = t_now.replace(hour=9, minute=30, second=0, microsecond=0)
+    t_buy = t_now.replace(hour=15, minute=00, second=0, microsecond=0)
     t_exit = t_now.replace(hour=15, minute=30, second=0, microsecond=0)
-    if t_start < t_now < t_exit:  # AM 09:05 ~ PM 03:15 : 매수 & 매도
+
+    if t_start < t_now < t_exit:  # AM 09:00 ~ PM 15:30 : 매도 & 매수
+        sell_watch_data()
+        buy_watch_data()
+
+    if t_start < t_now < t_sell:  # AM 09:00 ~ PM 09:30 : 매도
         sell_all()
 
+    elif t_buy < t_now < t_exit:  # AM 15:00 ~ PM 15:30 : 매수
+        get_code_list()
         buy_all()
-
         code_list.clear()
+        time.sleep(15)
 
-    elif t_exit < t_now:  # PM 03:20 ~ :프로그램 종료
+    elif t_exit < t_now:  # PM 15:30 ~ :프로그램 종료
         slack_send_message('`장 마감`')
         time.sleep(1)
         get_balance()
@@ -680,12 +700,10 @@ if __name__ == '__main__':
 
         print_message('시작 시간')
 
-        get_code_list()
         get_watch_data()
-        schedule.every(10).minutes.do(get_code_list)
-        schedule.every(10).minutes.do(get_watch_data)
+        schedule.every(15).seconds.do(get_watch_data)
 
-        schedule.every(1).seconds.do(auto_trade)
+        schedule.every(2).seconds.do(auto_trade)
 
         while True:
             schedule.run_pending()
