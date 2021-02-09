@@ -249,6 +249,12 @@ def get_code_list():
 def get_watch_data():
     wait_for_request(2)
     cpRpMarketWatch.Request('*', listWatchData)
+    for code in listWatchData.keys():
+        item = listWatchData[code]
+        if item['indicator'] in indicators \
+                and indicators[item['indicator']] is True:
+            name = cpCodeMgr.CodeToName(code)
+            slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
 
 
 def get_balance():
@@ -585,7 +591,6 @@ def buy_all():
             if item['indicator'] in indicators \
                     and indicators[item['indicator']] is True:
                 name = cpCodeMgr.CodeToName(code)
-                slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
                 current_price = get_current_price(code)
                 enough, shares = has_enough_cash(current_price, name)
                 if enough:
