@@ -653,7 +653,6 @@ def auto_trade():
     """자동 매도, 매수, 종료한다."""
     t_now = datetime.now()
     t_start = t_now.replace(hour=9, minute=0, second=0, microsecond=0)
-    t_sell = t_now.replace(hour=9, minute=10, second=0, microsecond=0)
     t_buy = t_now.replace(hour=9, minute=10, second=0, microsecond=0)
     t_end = t_now.replace(hour=9, minute=30, second=0, microsecond=0)
     t_last = t_now.replace(hour=15, minute=00, second=0, microsecond=0)
@@ -661,12 +660,9 @@ def auto_trade():
 
     # AM 09:00 ~ PM 15:30 : 매도 & 매수
     if t_start < t_now < t_exit:
+        sell_all()
         sell_watch_data()
         buy_watch_data()
-
-    # AM 09:00 ~ PM 09:10 : 매도
-    if t_start < t_now < t_sell:
-        sell_all()
 
     # AM 09:10 ~ AM 09:30 : 매수
     # PM 15:00 ~ PM 15:30 : 매수
