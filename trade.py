@@ -71,9 +71,6 @@ code_list = OrderedDict()
 listWatchData = {}
 ohlc_list = {}
 
-"""이전 잔고메세지 전역변수"""
-global pre_stock_message
-pre_stock_message = ''
 
 def print_message(*args):
     """인자로 받은 문자열을 파이썬 셸에 출력한다."""
@@ -693,8 +690,7 @@ def auto_trade():
 
 if __name__ == '__main__':
     try:
-        # if is_holiday():  # 휴일
-        if False:
+        if is_holiday():  # 휴일
             print_message('Today is holiday')
             sys.exit(0)
 
