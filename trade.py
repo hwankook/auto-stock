@@ -71,6 +71,9 @@ code_list = OrderedDict()
 listWatchData = {}
 ohlc_list = {}
 
+"""이전 잔고메세지 전역변수"""
+global pre_stock_message
+pre_stock_message = ''
 
 def print_message(*args):
     """인자로 받은 문자열을 파이썬 셸에 출력한다."""
@@ -343,6 +346,8 @@ def get_stock_balance(code=''):
 
 
 def print_stock_balance(stock_balance):
+    """이전 잔고메세지 전역변수"""
+    global pre_stock_message
     """보유 종목을 출력한다."""
     if 0 < len(stock_balance):
         message = '주식잔고\n'
@@ -353,7 +358,13 @@ def print_stock_balance(stock_balance):
             price = int(stock['price'])
             name = stock['name']
             message += f'{code}\t{shares:>5,}\t{percentage:>5.02f}%\t{price:>,}\t{name}\n'
-        print_message(message)
+
+        """이전 잔고메세지랑 다를때만 출력"""
+        if message != pre_stock_message:
+            pre_stock_message = message
+            print_message(message)
+        else:
+            pre_stock_message = message
 
 
 def get_transaction_history(code=""):
@@ -585,7 +596,6 @@ def sell_all():
     try:
         stock_balance = get_stock_balance()
         print_stock_balance(stock_balance)
-
         for code, stock in stock_balance.items():
             percentage = stock['percentage']
             name = stock['name']
@@ -683,7 +693,8 @@ def auto_trade():
 
 if __name__ == '__main__':
     try:
-        if is_holiday():  # 휴일
+        # if is_holiday():  # 휴일
+        if False:
             print_message('Today is holiday')
             sys.exit(0)
 
