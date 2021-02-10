@@ -59,7 +59,7 @@ indicators = {
 
 # CpEvent: 실시간 이벤트 수신 클래스
 class CpEvent:
-    def set_params(self, client, listWatchData: OrderedDict):
+    def set_params(self, client, listWatchData):
         self.client = client  # CP 실시간 통신 object
         self.listWatchData = listWatchData
 
@@ -112,7 +112,7 @@ class CpRpMarketWatch:
         self.cpMarketWatch = win32com.client.Dispatch('CpSysDib.CpMarketWatch')
         self.cpMarketWatchS = CpMarketWatchS()
 
-    def Request(self, code, listWatchData: OrderedDict):
+    def Request(self, code, listWatchData):
         listWatchData.clear()
 
         self.cpMarketWatchS.Unsubscribe()

@@ -181,15 +181,15 @@ def get_biggest_moves_code():
         if 200 <= len(code_list):
             break
 
-        if not cpCodeMgr.IsBigListingStock(code):
-            continue
-
         # 상장 주식수 20억 이상만 담는다.
         code = cpMoves.GetDataValue(0, i)  # 코드
         vol = cpMoves.GetDataValue(6, i)  # 거래량
         price = cpMoves.GetDataValue(2, i)  # 현재가
         percent = cpMoves.GetDataValue(4, i)  # 대비율
         name = cpMoves.GetDataValue(1, i)  # 종목명
+
+        if not cpCodeMgr.IsBigListingStock(code):
+            continue
 
         # -15% 하락 제외
         if percent < -15.0:
@@ -256,7 +256,7 @@ def get_watch_data():
     for code in listWatchData.keys():
         item = listWatchData[code]
         if item['indicator'] in indicators \
-                and indicators[item['indicator']] is True:
+                and indicators[item['indicator']] is (True or False):
             name = cpCodeMgr.CodeToName(code)
             slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
 
@@ -537,7 +537,7 @@ def buy_stock(code, name, shares, current_price):
             cpOrder.BlockRequest()
         stock_name, stock_qty, stock_price = get_stock_balance(code)
         if shares <= stock_qty:
-            slack_send_message(f'{name} {stock_price:,}원 {shares}주 매수 -> returned {ret}')
+            slack_send_message(f'{name} {stock_price:,.1}원 {shares}주 매수 -> returned {ret}')
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`buy_stock(" + str(code) + ") -> exception! " + str(e) + "`")
@@ -557,7 +557,6 @@ def sell_watch_data():
                 if item['indicator'] in indicators \
                         and indicators[item['indicator']] is False:
                     name = cpCodeMgr.CodeToName(code)
-                    slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
                     sell_stock(code, name, shares, percentage)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
