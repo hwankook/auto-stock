@@ -70,6 +70,7 @@ slack = Slacker(config.token)
 code_list = OrderedDict()
 listWatchData = {}
 ohlc_list = {}
+pre_stock_message = ''
 
 
 def print_message(*args):
@@ -343,9 +344,8 @@ def get_stock_balance(code=''):
 
 
 def print_stock_balance(stock_balance):
-    """이전 잔고메세지 전역변수"""
-    global pre_stock_message
     """보유 종목을 출력한다."""
+    global pre_stock_message
     if 0 < len(stock_balance):
         message = '주식잔고\n'
         message += '코드\t수량  대비율\t장부가\t종목명\n'
@@ -357,7 +357,7 @@ def print_stock_balance(stock_balance):
             message += f'{code}\t{shares:>5,}\t{percentage:>5.02f}%\t{price:>,}\t{name}\n'
 
         """이전 잔고메세지랑 다를때만 출력"""
-        if message != pre_stock_message:
+        if pre_stock_message != message:
             pre_stock_message = message
             print_message(message)
         else:
