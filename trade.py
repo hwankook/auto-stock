@@ -346,6 +346,7 @@ def get_stock_balance(code=''):
 def print_stock_balance(stock_balance):
     """보유 종목을 출력한다."""
     global pre_stock_message
+
     if 0 < len(stock_balance):
         message = '주식잔고\n'
         message += '코드\t수량  대비율\t장부가\t종목명\n'
@@ -545,7 +546,7 @@ def buy_stock(code, name, shares, current_price):
             cpOrder.BlockRequest()
         stock_name, stock_qty, stock_price = get_stock_balance(code)
         if shares <= stock_qty:
-            slack_send_message(f'{name} {stock_price:,.1}원 {shares}주 매수 -> returned {ret}')
+            slack_send_message(f'{name} {stock_price:,.1f}원 {shares}주 매수 -> returned {ret}')
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`buy_stock(" + str(code) + ") -> exception! " + str(e) + "`")
@@ -593,6 +594,7 @@ def sell_all():
     try:
         stock_balance = get_stock_balance()
         print_stock_balance(stock_balance)
+
         for code, stock in stock_balance.items():
             percentage = stock['percentage']
             name = stock['name']
