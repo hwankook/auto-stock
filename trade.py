@@ -595,15 +595,15 @@ def sell_all():
         for code, stock in stock_balance.items():
             name = stock['name']
             shares = stock['shares']
-            price = stock['price']
+            current_price = get_current_price(code)
             if code not in high_list.keys():
-                high_list[code] = price
+                high_list[code] = current_price
             else:
-                high_list[code] = max(price, high_list[code])
+                high_list[code] = max(current_price, high_list[code])
 
                 # 손익 profit_rate%, 매도 loss_rate%
-                percentage = high_list[code] / price
-                if config.profit_rate <= percentage or percentage <= config.loss_rate:
+                percentage = high_list[code] / current_price
+                if config.profit_rate <= percentage or stock['percentage'] <= config.loss_rate:
                     sell_stock(code, name, shares, percentage)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
