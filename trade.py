@@ -71,7 +71,9 @@ code_list = OrderedDict()
 listWatchData = {}
 ohlc_list = {}
 high_list = {}
+
 pre_stock_message = ''
+remark = ''
 
 
 def print_message(*args):
@@ -352,12 +354,10 @@ def print_stock_balance(stock_balance):
             name = stock['name']
             message += f'{code}\t{shares:>5,}\t{percentage:>5.02f}%\t{price:>,}\t{name}\n'
 
-        """이전 잔고메세지랑 다를때만 출력"""
+        # 이전 잔고메세지랑 다를때만 출력
         if pre_stock_message != message:
-            pre_stock_message = message
             print_message(message)
-        else:
-            pre_stock_message = message
+        pre_stock_message = message
 
 
 def get_transaction_history(code=""):
@@ -550,6 +550,8 @@ def buy_stock(code, name, shares, current_price):
 def sell_watch_data():
     """주요 신호 포착될 때 매도한다."""
     try:
+        global remark
+
         stock_balance = get_stock_balance()
         print_stock_balance(stock_balance)
 
@@ -561,7 +563,10 @@ def sell_watch_data():
                 if item['indicator'] in indicators \
                         and indicators[item['indicator']] is False:
                     name = cpCodeMgr.CodeToName(code)
-                    slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
+                    message = f'[{item["time"]}] {code} {name}, {item["remark"]}'
+                    if remark != message:
+                        slack_send_message(remark)
+                    remark = message
                     sell_stock(code, name, shares, percentage)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
@@ -571,6 +576,8 @@ def sell_watch_data():
 def buy_watch_data():
     """주요 신호 포착될 때 매수한다."""
     try:
+        global remark
+
         for code in listWatchData.keys():
             item = listWatchData[code]
             if item['indicator'] in indicators \
@@ -579,14 +586,17 @@ def buy_watch_data():
                 current_price = get_current_price(code)
                 enough, shares = has_enough_cash(current_price, name)
                 if enough:
-                    slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
+                    message = f'[{item["time"]}] {code} {name}, {item["remark"]}'
+                    if remark != message:
+                        slack_send_message(remark)
+                    remark = message
                     buy_stock(code, name, shares, current_price)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`buy_watch_data() -> exception! " + str(e) + "`")
 
 
-def sell_all():
+def sell_profits():
     """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
     try:
         stock_balance = get_stock_balance()
@@ -595,19 +605,40 @@ def sell_all():
         for code, stock in stock_balance.items():
             name = stock['name']
             shares = stock['shares']
+            percentage = stock['percentage']
+
+            # 매도 profit_rate%
+            if config.profit_rate <= percentage:
+                sell_stock(code, name, shares, percentage)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`sell_when_to_take_profits() -> exception! " + str(e) + "`")
+
+
+def sell_losses():
+    """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
+    try:
+        stock_balance = get_stock_balance()
+        print_stock_balance(stock_balance)
+
+        for code, stock in stock_balance.items():
+            name = stock['name']
+            shares = stock['shares']
+            percentage = stock['percentage']
+
             current_price = get_current_price(code)
             if code not in high_list.keys():
                 high_list[code] = current_price
             else:
-                high_list[code] = max(current_price, high_list[code])
-
-                # 손익 profit_rate%, 매도 loss_rate%
-                percentage = high_list[code] / current_price
-                if config.profit_rate <= percentage or stock['percentage'] <= config.loss_rate:
-                    sell_stock(code, name, shares, percentage)
+                if high_list[code] < current_price:
+                    high_list[code] = current_price
+                else:
+                    # 매도 loss_rate%
+                    if percentage <= config.loss_rate:
+                        sell_stock(code, name, shares, percentage)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
-        slack_send_message("`sell_all() -> exception! " + str(e) + "`")
+        slack_send_message("`sell_when_to_take_losses() -> exception! " + str(e) + "`")
 
 
 def buy_all():
@@ -634,7 +665,7 @@ def buy_all():
                     buy_stock(code, name, shares, current_price)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
-        slack_send_message("`sell_all() -> exception! " + str(e) + "`")
+        slack_send_message("`buy_all() -> exception! " + str(e) + "`")
 
 
 def get_balance():
@@ -662,15 +693,19 @@ def auto_trade():
     t_last = t_now.replace(hour=15, minute=00, second=0, microsecond=0)
     t_exit = t_now.replace(hour=15, minute=30, second=0, microsecond=0)
 
+    # AM 09:00 ~ PM 09:10 : 매도
+    if t_start < t_now < t_buy:
+        sell_profits()
+
     # AM 09:00 ~ PM 15:30 : 매도 & 매수
     if t_start < t_now < t_exit:
-        sell_all()
+        sell_losses()
         sell_watch_data()
         buy_watch_data()
 
     # AM 09:10 ~ AM 09:30 : 매수
     # PM 15:00 ~ PM 15:30 : 매수
-    elif t_buy < t_now < t_end or \
+    if t_buy < t_now < t_end or \
             t_last < t_now < t_exit:
         get_code_list()
         buy_all()
@@ -678,7 +713,7 @@ def auto_trade():
         time.sleep(15)
 
     # PM 15:30 ~ :프로그램 종료
-    elif t_exit < t_now:
+    if t_exit < t_now:
         slack_send_message('`장 마감`')
         time.sleep(1)
         get_balance()
