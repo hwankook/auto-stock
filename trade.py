@@ -70,6 +70,7 @@ slack = Slacker(config.token)
 code_list = OrderedDict()
 listWatchData = {}
 ohlc_list = {}
+high_list = {}
 pre_stock_message = ''
 
 
@@ -254,12 +255,6 @@ def get_watch_data():
     """특징주 포착을 수신한다."""
     wait_for_request(2)
     cpRpMarketWatch.Request('*', listWatchData)
-    for code in listWatchData.keys():
-        item = listWatchData[code]
-        if item['indicator'] in indicators \
-                and indicators[item['indicator']] is (True or False):
-            name = cpCodeMgr.CodeToName(code)
-            slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
 
 
 def get_current_cash():
@@ -566,6 +561,7 @@ def sell_watch_data():
                 if item['indicator'] in indicators \
                         and indicators[item['indicator']] is False:
                     name = cpCodeMgr.CodeToName(code)
+                    slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
                     sell_stock(code, name, shares, percentage)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
@@ -583,6 +579,7 @@ def buy_watch_data():
                 current_price = get_current_price(code)
                 enough, shares = has_enough_cash(current_price, name)
                 if enough:
+                    slack_send_message(f'[{item["time"]}] {code} {name}, {item["remark"]}')
                     buy_stock(code, name, shares, current_price)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
@@ -596,20 +593,18 @@ def sell_all():
         print_stock_balance(stock_balance)
 
         for code, stock in stock_balance.items():
-            percentage = stock['percentage']
             name = stock['name']
             shares = stock['shares']
+            price = stock['price']
+            if code not in high_list.keys():
+                high_list[code] = price
+            else:
+                high_list[code] = max(price, high_list[code])
 
-            # 손익 profit_rate%, 매도 loss_rate%
-            if config.profit_rate <= percentage or percentage <= config.loss_rate:
-                # 시가총액 10조 이상이면 +10%, -5% 매도
-                market_caps = get_market_cap(code)
-                if 100000 < market_caps[code]:
-                    if 10.0 <= percentage or percentage <= -5.0:
-                        sell_stock(code, name, shares, percentage)
-                        continue
-
-                sell_stock(code, name, shares, percentage)
+                # 손익 profit_rate%, 매도 loss_rate%
+                percentage = high_list[code] / price
+                if config.profit_rate <= percentage or percentage <= config.loss_rate:
+                    sell_stock(code, name, shares, percentage)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`sell_all() -> exception! " + str(e) + "`")
