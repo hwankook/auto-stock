@@ -583,6 +583,9 @@ def buy_watch_data():
             item = listWatchData[code]
             if item['indicator'] in indicators \
                     and indicators[item['indicator']] is True:
+                if not cpCodeMgr.IsBigListingStock(code):
+                    continue
+
                 name = cpCodeMgr.CodeToName(code)
                 current_price = get_current_price(code)
                 enough, shares = has_enough_cash(current_price, name)
@@ -618,7 +621,9 @@ def sell_all():
             else:
                 low_list[code] = min(percentage, low_list[code])
 
-            if config.profit_rate <= high_list[code] or low_list[code] <= config.loss_rate:
+            if config.profit_rate <= percentage or percentage <= config.loss_rate:
+                sell_stock(code, name, shares, percentage)
+            elif high_list[code] < percentage or percentage < low_list[code]:
                 sell_stock(code, name, shares, percentage)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
