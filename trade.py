@@ -591,7 +591,7 @@ def buy_watch_data():
                 if enough:
                     message = f'[{item["time"]}] {code} {name}, {item["remark"]}'
                     if remark != message:
-                        slack_send_message(remark)
+                        slack_send_message(message)
                     remark = message
                     buy_stock(code, name, shares, current_price)
     except Exception as e:
