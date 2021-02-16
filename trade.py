@@ -71,7 +71,6 @@ code_list = OrderedDict()
 listWatchData = {}
 ohlc_list = {}
 high_list = {}
-low_list = {}
 
 pre_stock_message = ''
 remark = ''
@@ -616,14 +615,11 @@ def sell_all():
             else:
                 high_list[code] = max(percentage, high_list[code])
 
-            if code not in low_list.keys():
-                low_list[code] = percentage
-            else:
-                low_list[code] = min(percentage, low_list[code])
+            if config.profit_rate <= percentage:
+                if percentage < high_list[code]:
+                    sell_stock(code, name, shares, percentage)
 
-            if config.profit_rate <= percentage or percentage <= config.loss_rate:
-                sell_stock(code, name, shares, percentage)
-            elif high_list[code] < percentage or percentage < low_list[code]:
+            if percentage <= config.loss_rate:
                 sell_stock(code, name, shares, percentage)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
