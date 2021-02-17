@@ -68,7 +68,7 @@ indicators = {
 slack = Slacker(config.token)
 
 code_list = OrderedDict()
-listWatchData = {}
+watch_data = {}
 ohlc_list = {}
 high_list = {}
 
@@ -244,6 +244,7 @@ def print_code_list():
 
 def get_code_list():
     """종목 코드를 가져온다."""
+    code_list.clear()
     get_high_volume_code()
     get_biggest_moves_code()
     market_caps = get_market_cap(list(code_list.keys()))
@@ -256,7 +257,7 @@ def get_code_list():
 def get_watch_data():
     """특징주 포착을 수신한다."""
     wait_for_request(2)
-    cpRpMarketWatch.Request('*', listWatchData)
+    cpRpMarketWatch.Request('*', watch_data)
 
 
 def get_current_cash():
@@ -270,38 +271,6 @@ def get_current_cash():
     wait_for_request(0)
     cpCash.BlockRequest()
     return cpCash.GetHeaderValue(9)  # 증거금 100% 주문 가능 금액
-
-
-def get_current_price(code):
-    """인자로 받은 종목의 현재가, 매도호가, 매도호가 잔량, 매수호가, 매수호가 잔량을 반환한다."""
-    cpStockMst.SetInputValue(0, code)  # 종목코드에 대한 가격 정보
-
-    wait_for_request(1)
-    cpStockMst.BlockRequest()
-
-    current_price = cpStockMst.GetHeaderValue(11)  # 현재가
-
-    return current_price
-
-
-def has_enough_cash(current_price, name):
-    """매수할 때 100% 증거금이 충분한지 조회한다."""
-    total_cash = int(get_current_cash())  # 100% 증거금 주문 가능 금액 조회
-    buy_amount = int(config.buy_amount)
-    shares = int(buy_amount // current_price)
-    if total_cash < current_price * shares:
-        shares = int(total_cash // current_price)
-        if shares == 0:
-            print_message(f'{name} {current_price:,}\n'
-                          f'100% 증거금 {current_price - total_cash:,}원 부족')
-            return False, 0
-
-    if shares == 0:
-        print_message(f'{name} {current_price:,}\n'
-                      f'종목당 주문가능금액 {current_price - config.buy_amount:,}원 부족')
-        return False, 0
-
-    return True, shares
 
 
 def get_stock_balance(code=''):
@@ -360,6 +329,121 @@ def print_stock_balance(stock_balance):
         pre_stock_message = message
 
 
+def get_current_stock(code):
+    """인자로 받은 종목의 현재가, 매도호가, 매도호가 잔량, 매수호가, 매수호가 잔량을 반환한다."""
+    cpStockMst.SetInputValue(0, code)  # 종목코드에 대한 가격 정보
+
+    wait_for_request(1)
+    cpStockMst.BlockRequest()
+
+    current_price = cpStockMst.GetHeaderValue(11)  # 현재가
+    high = cpStockMst.GetHeaderValue(14)  # 고가
+    low = cpStockMst.GetHeaderValue(15)  # 저가
+
+    return current_price, high, low
+
+
+def has_enough_cash(current_price, name):
+    """매수할 때 100% 증거금이 충분한지 조회한다."""
+    total_cash = int(get_current_cash())  # 100% 증거금 주문 가능 금액 조회
+    buy_amount = int(config.buy_amount)
+    shares = int(buy_amount // current_price)
+    if total_cash < current_price * shares:
+        shares = int(total_cash // current_price)
+        if shares == 0:
+            print_message(f'{name} {current_price:,}\n'
+                          f'100% 증거금 {current_price - total_cash:,}원 부족')
+            return False, 0
+
+    if shares == 0:
+        print_message(f'{name} {current_price:,}\n'
+                      f'종목당 주문가능금액 {current_price - config.buy_amount:,}원 부족')
+        return False, 0
+
+    return True, shares
+
+
+def sell_stock(code, name, shares, percentage):
+    """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
+    try:
+        cpTradeUtil.TradeInit()
+        acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
+        accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체, 1:주식, 2:선물/옵션
+
+        # 최유리 IOC 매도 주문 설정
+        cpOrder.SetInputValue(0, "1")  # 1:매도, 2:매수
+        cpOrder.SetInputValue(1, acc)  # 계좌번호
+        cpOrder.SetInputValue(2, accFlag[0])  # 주식상품 중 첫번째
+        cpOrder.SetInputValue(3, code)  # 종목코드
+        cpOrder.SetInputValue(4, shares)  # 매도수량
+        cpOrder.SetInputValue(7, "1")  # 조건 0:기본, 1:IOC, 2:FOK
+        cpOrder.SetInputValue(8, "12")  # 호가 12:최유리, 13:최우선
+
+        # 최유리 IOC 매도 주문 요청
+        ret = cpOrder.BlockRequest()
+        if ret == 4:
+            print_message('주의: 연속 주문 제한')
+            wait_for_request(0)
+            cpOrder.BlockRequest()
+        slack_send_message(f'{name} {shares}주 매도 (손익: `{percentage:2.2f}`) -> returned {ret}')
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message(f"`sell({code}) -> exception! " + str(e) + "`")
+
+
+def sell_watch_data():
+    """주요 신호 포착될 때 매도한다."""
+    try:
+        global remark
+
+        stock_balance = get_stock_balance()
+        print_stock_balance(stock_balance)
+
+        for code, stock in stock_balance.items():
+            percentage = stock['percentage']
+            shares = stock['shares']
+            if code in watch_data.keys():
+                item = watch_data[code]
+                if item['indicator'] in indicators \
+                        and indicators[item['indicator']] is False:
+                    name = cpCodeMgr.CodeToName(code)
+                    message = f'[{item["time"]}] {code} {name}, {item["remark"]}'
+                    if remark != message:
+                        slack_send_message(remark)
+                    remark = message
+                    sell_stock(code, name, shares, percentage)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`sell_watch_data() -> exception! " + str(e) + "`")
+
+
+def sell_all():
+    """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
+    try:
+        stock_balance = get_stock_balance()
+        print_stock_balance(stock_balance)
+
+        for code, stock in stock_balance.items():
+            name = stock['name']
+            shares = stock['shares']
+            percentage = stock['percentage']
+
+            if code not in high_list.keys():
+                high_list[code] = percentage
+            else:
+                high_list[code] = max(percentage, high_list[code])
+
+            if config.profit_rate <= percentage:
+                if percentage < high_list[code]:
+                    sell_stock(code, name, shares, percentage)
+
+            if percentage <= config.loss_rate:
+                sell_stock(code, name, shares, percentage)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`sell_when_to_take_losses() -> exception! " + str(e) + "`")
+
+
 def get_transaction_history(code=""):
     """ 금일 계좌별 주문/체결 내역 조회 데이터를 요청하고 수신한다."""
     cpTradeUtil.TradeInit()
@@ -389,6 +473,89 @@ def get_transaction_history(code=""):
         })
 
     return history
+
+
+def buy_stock(code, name, shares, current_price):
+    """인자로 받은 종목을 최유리 지정가 IOC 조건으로 매수한다."""
+    try:
+        # 매수 완료 종목이면 더 이상 안 사도록 리턴
+        stock_balance = get_stock_balance()
+        if stock_balance.get(code):
+            print_message(f'{code} {name}\n'
+                          f'이미 매수한 종목이므로 더 이상 구매하지 않습니다.')
+            return
+
+        # 매수 완료 종목 개수가 매수할 종목 수 이상이면 리턴
+        if config.target_buy_count < len(stock_balance):
+            print_message(f'매수한 종목 수: {len(stock_balance)}\n'
+                          f'더 이상 구매하지 않습니다.')
+            return
+
+        # 금일 계좌에 체결내역이 있을 경우 체결단가 보다 현재가가 높으면 구매하지 않음
+        history = get_transaction_history(code)
+        if code in history.keys():
+            # 체결내역이 정상주문에 매수일 경우에
+            for item in history[code]:
+                if '정상주문' == item["state"] \
+                        and '2' == item["order"]:
+                    print_message(f'거래 내역에 해당 종목이 있습니다.\n'
+                                  f'{code} {name}\n'
+                                  f'체결단가: {item["price"]:,}\n'
+                                  f'현재가: {current_price:,}')
+                    return
+
+        cpTradeUtil.TradeInit()
+        acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
+        accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체,1:주식,2:선물/옵션
+
+        # 최유리 IOC 매수 주문 설정
+        cpOrder.SetInputValue(0, "2")  # 2: 매수
+        cpOrder.SetInputValue(1, acc)  # 계좌번호
+        cpOrder.SetInputValue(2, accFlag[0])  # 상품구분 - 주식 상품 중 첫번째
+        cpOrder.SetInputValue(3, code)  # 종목코드
+        cpOrder.SetInputValue(4, shares)  # 매수할 수량
+        cpOrder.SetInputValue(7, "1")  # 주문조건 0:기본, 1:IOC, 2:FOK
+        cpOrder.SetInputValue(8, "12")  # 주문호가 1:보통, 3:시장가 5:조건부, 12:최유리, 13:최우선
+
+        # 매수 주문 요청
+        ret = cpOrder.BlockRequest()
+
+        if ret == 4:
+            print_message('주의: 연속 주문 제한')
+            wait_for_request(0)
+            cpOrder.BlockRequest()
+        stock_name, stock_qty, stock_price = get_stock_balance(code)
+        if shares <= stock_qty:
+            slack_send_message(f'{name} {stock_price:,.1f}원 {shares}주 매수 -> returned {ret}')
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`buy_stock(" + str(code) + ") -> exception! " + str(e) + "`")
+
+
+def buy_watch_data():
+    """주요 신호 포착될 때 매수한다."""
+    try:
+        global remark
+
+        for code in watch_data.keys():
+            item = watch_data[code]
+            if item['indicator'] in indicators \
+                    and indicators[item['indicator']] is True:
+                if not cpCodeMgr.IsBigListingStock(code):
+                    continue
+
+                name = cpCodeMgr.CodeToName(code)
+                current_price, _, _ = get_current_stock(code)
+                enough, shares = has_enough_cash(current_price, name)
+                if enough:
+                    message = f'[{item["time"]}] {code} {name}, {item["remark"]}'
+                    if remark != message:
+                        slack_send_message(message)
+                    remark = message
+                    buy_stock(code, name, shares, current_price)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`buy_watch_data() -> exception! " + str(e) + "`")
 
 
 def get_ohlc(code, window):
@@ -462,192 +629,29 @@ def get_movingaverage(ohlc, window):
         return None
 
 
-def sell_stock(code, name, shares, percentage):
-    """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
-    try:
-        cpTradeUtil.TradeInit()
-        acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
-        accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체, 1:주식, 2:선물/옵션
-
-        # 최유리 IOC 매도 주문 설정
-        cpOrder.SetInputValue(0, "1")  # 1:매도, 2:매수
-        cpOrder.SetInputValue(1, acc)  # 계좌번호
-        cpOrder.SetInputValue(2, accFlag[0])  # 주식상품 중 첫번째
-        cpOrder.SetInputValue(3, code)  # 종목코드
-        cpOrder.SetInputValue(4, shares)  # 매도수량
-        cpOrder.SetInputValue(7, "1")  # 조건 0:기본, 1:IOC, 2:FOK
-        cpOrder.SetInputValue(8, "12")  # 호가 12:최유리, 13:최우선
-
-        # 최유리 IOC 매도 주문 요청
-        ret = cpOrder.BlockRequest()
-        if ret == 4:
-            print_message('주의: 연속 주문 제한')
-            wait_for_request(0)
-            cpOrder.BlockRequest()
-        slack_send_message(f'{name} {shares}주 매도 (손익: `{percentage:2.2f}`) -> returned {ret}')
-    except Exception as e:
-        traceback.print_exc(file=sys.stdout)
-        slack_send_message(f"`sell({code}) -> exception! " + str(e) + "`")
-
-
-def buy_stock(code, name, shares, current_price):
-    """인자로 받은 종목을 최유리 지정가 IOC 조건으로 매수한다."""
-    try:
-        # 매수 완료 종목이면 더 이상 안 사도록 리턴
-        stock_balance = get_stock_balance()
-        if stock_balance.get(code):
-            print_message(f'{code} {name}\n'
-                          f'이미 매수한 종목이므로 더 이상 구매하지 않습니다.')
-            return
-
-        # 매수 완료 종목 개수가 매수할 종목 수 이상이면 리턴
-        if config.target_buy_count < len(stock_balance):
-            print_message(f'매수한 종목 수: {len(stock_balance)}\n'
-                          f'더 이상 구매하지 않습니다.')
-            return
-
-        # 금일 계좌에 체결내역이 있을 경우 체결단가 보다 현재가가 높으면 구매하지 않음
-        history = get_transaction_history(code)
-        if code in history.keys():
-            # 체결내역이 정상주문에 매수일 경우에
-            for item in history[code]:
-                if '정상주문' == item["state"] \
-                        and '2' == item["order"]:
-                    print_message(f'거래 내역에 해당 종목이 있습니다.\n'
-                                  f'{code} {name}\n'
-                                  f'체결단가: {item["price"]:,}\n'
-                                  f'현재가: {current_price:,}')
-                    return
-
-        cpTradeUtil.TradeInit()
-        acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
-        accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체,1:주식,2:선물/옵션
-
-        # 최유리 IOC 매수 주문 설정
-        cpOrder.SetInputValue(0, "2")  # 2: 매수
-        cpOrder.SetInputValue(1, acc)  # 계좌번호
-        cpOrder.SetInputValue(2, accFlag[0])  # 상품구분 - 주식 상품 중 첫번째
-        cpOrder.SetInputValue(3, code)  # 종목코드
-        cpOrder.SetInputValue(4, shares)  # 매수할 수량
-        cpOrder.SetInputValue(7, "1")  # 주문조건 0:기본, 1:IOC, 2:FOK
-        cpOrder.SetInputValue(8, "12")  # 주문호가 1:보통, 3:시장가 5:조건부, 12:최유리, 13:최우선
-
-        # 매수 주문 요청
-        ret = cpOrder.BlockRequest()
-
-        if ret == 4:
-            print_message('주의: 연속 주문 제한')
-            wait_for_request(0)
-            cpOrder.BlockRequest()
-        stock_name, stock_qty, stock_price = get_stock_balance(code)
-        if shares <= stock_qty:
-            slack_send_message(f'{name} {stock_price:,.1f}원 {shares}주 매수 -> returned {ret}')
-    except Exception as e:
-        traceback.print_exc(file=sys.stdout)
-        slack_send_message("`buy_stock(" + str(code) + ") -> exception! " + str(e) + "`")
-
-
-def sell_watch_data():
-    """주요 신호 포착될 때 매도한다."""
-    try:
-        global remark
-
-        stock_balance = get_stock_balance()
-        print_stock_balance(stock_balance)
-
-        for code, stock in stock_balance.items():
-            percentage = stock['percentage']
-            shares = stock['shares']
-            if code in listWatchData.keys():
-                item = listWatchData[code]
-                if item['indicator'] in indicators \
-                        and indicators[item['indicator']] is False:
-                    name = cpCodeMgr.CodeToName(code)
-                    message = f'[{item["time"]}] {code} {name}, {item["remark"]}'
-                    if remark != message:
-                        slack_send_message(remark)
-                    remark = message
-                    sell_stock(code, name, shares, percentage)
-    except Exception as e:
-        traceback.print_exc(file=sys.stdout)
-        slack_send_message("`sell_watch_data() -> exception! " + str(e) + "`")
-
-
-def buy_watch_data():
-    """주요 신호 포착될 때 매수한다."""
-    try:
-        global remark
-
-        for code in listWatchData.keys():
-            item = listWatchData[code]
-            if item['indicator'] in indicators \
-                    and indicators[item['indicator']] is True:
-                if not cpCodeMgr.IsBigListingStock(code):
-                    continue
-
-                name = cpCodeMgr.CodeToName(code)
-                current_price = get_current_price(code)
-                enough, shares = has_enough_cash(current_price, name)
-                if enough:
-                    message = f'[{item["time"]}] {code} {name}, {item["remark"]}'
-                    if remark != message:
-                        slack_send_message(message)
-                    remark = message
-                    buy_stock(code, name, shares, current_price)
-    except Exception as e:
-        traceback.print_exc(file=sys.stdout)
-        slack_send_message("`buy_watch_data() -> exception! " + str(e) + "`")
-
-
-def sell_all():
-    """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
-    try:
-        stock_balance = get_stock_balance()
-        print_stock_balance(stock_balance)
-
-        for code, stock in stock_balance.items():
-            name = stock['name']
-            shares = stock['shares']
-            percentage = stock['percentage']
-
-            if code not in high_list.keys():
-                high_list[code] = percentage
-            else:
-                high_list[code] = max(percentage, high_list[code])
-
-            if config.profit_rate <= percentage:
-                if percentage < high_list[code]:
-                    sell_stock(code, name, shares, percentage)
-
-            if percentage <= config.loss_rate:
-                sell_stock(code, name, shares, percentage)
-    except Exception as e:
-        traceback.print_exc(file=sys.stdout)
-        slack_send_message("`sell_when_to_take_losses() -> exception! " + str(e) + "`")
-
-
 def buy_all():
     """주요 신호가 포착되거나, 종목 코드의 목표가 보다 현재가가 클 때 매수한다."""
     try:
         # 매수 목표가, 5일 이동평균가, 10일 이동평균가 보다 현재가가 클 때 매수
         for code in code_list.keys():
-            if code in ohlc_list.keys():
-                ohlc = ohlc_list[code]
-            else:
+            if code not in ohlc_list.keys():
                 ohlc = get_ohlc(code, 10)
                 ohlc_list[code] = ohlc
+            else:
+                ohlc = ohlc_list[code]
 
             target_price = get_target_price_to_buy(ohlc)  # 매수 목표가
             ma5_price = get_movingaverage(ohlc, 5)  # 5일 이동평균가
             ma10_price = get_movingaverage(ohlc, 10)  # 10일 이동평균가
-            current_price = get_current_price(code)
-            if target_price < current_price \
+            current_price, high, low = get_current_stock(code)
+            if target_price < current_price <= high \
                     and ma5_price < current_price \
                     and ma10_price < current_price:
                 name = code_list[code][3]
                 enough, shares = has_enough_cash(current_price, name)
                 if enough:
                     buy_stock(code, name, shares, current_price)
+            time.sleep(1)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`buy_all() -> exception! " + str(e) + "`")
@@ -673,25 +677,14 @@ def auto_trade():
     """자동 매도, 매수, 종료한다."""
     t_now = datetime.now()
     t_start = t_now.replace(hour=9, minute=0, second=0, microsecond=0)
-    t_buy = t_now.replace(hour=9, minute=10, second=0, microsecond=0)
-    t_end = t_now.replace(hour=9, minute=30, second=0, microsecond=0)
-    t_last = t_now.replace(hour=15, minute=00, second=0, microsecond=0)
     t_exit = t_now.replace(hour=15, minute=30, second=0, microsecond=0)
 
     # AM 09:00 ~ PM 15:30 : 매도 & 매수
     if t_start < t_now < t_exit:
-        sell_all()
         sell_watch_data()
+        sell_all()
         buy_watch_data()
-
-    # AM 09:10 ~ AM 09:30 : 매수
-    # PM 15:00 ~ PM 15:30 : 매수
-    if t_buy < t_now < t_end or \
-            t_last < t_now < t_exit:
-        get_code_list()
         buy_all()
-        code_list.clear()
-        time.sleep(15)
 
     # PM 15:30 ~ :프로그램 종료
     if t_exit < t_now:
@@ -730,7 +723,9 @@ if __name__ == '__main__':
         print_message('시작 시간')
 
         get_watch_data()
+        get_code_list()
         schedule.every(15).seconds.do(get_watch_data)
+        schedule.every(15).seconds.do(get_code_list)
 
         schedule.every(2).seconds.do(auto_trade)
 
