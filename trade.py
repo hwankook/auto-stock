@@ -651,7 +651,7 @@ def buy_all():
                 enough, shares = has_enough_cash(current_price, name)
                 if enough:
                     buy_stock(code, name, shares, current_price)
-            time.sleep(1)
+            time.sleep(0.7)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`buy_all() -> exception! " + str(e) + "`")
@@ -727,7 +727,7 @@ if __name__ == '__main__':
         schedule.every(15).seconds.do(get_watch_data)
         schedule.every(15).seconds.do(get_code_list)
 
-        schedule.every(2).seconds.do(auto_trade)
+        schedule.every(1).seconds.do(auto_trade)
 
         while True:
             schedule.run_pending()
