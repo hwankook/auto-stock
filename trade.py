@@ -330,7 +330,7 @@ def print_stock_balance(stock_balance):
 
 
 def get_current_stock(code):
-    """인자로 받은 종목의 현재가, 매도호가, 매도호가 잔량, 매수호가, 매수호가 잔량을 반환한다."""
+    """인자로 받은 종목의 현재가, 고가, 저가를 반환한다."""
     cpStockMst.SetInputValue(0, code)  # 종목코드에 대한 가격 정보
 
     wait_for_request(1)
