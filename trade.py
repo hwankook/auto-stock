@@ -244,6 +244,7 @@ def print_code_list():
 
 def get_code_list():
     """종목 코드를 가져온다."""
+    code_list.clear()
     get_high_volume_code()
     get_biggest_moves_code()
     market_caps = get_market_cap(list(code_list.keys()))
@@ -642,7 +643,6 @@ def buy_all():
                 if enough:
                     buy_stock(code, name, shares, current_price)
             time.sleep(0.7)
-        code_list.clear()
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`buy_all() -> exception! " + str(e) + "`")
@@ -668,16 +668,29 @@ def auto_trade():
     """자동 매도, 매수, 종료한다."""
     t_now = datetime.now()
     t_start = t_now.replace(hour=9, minute=0, second=0, microsecond=0)
+    t_buy = t_now.replace(hour=9, minute=10, second=0, microsecond=0)
+    t_idle = t_now.replace(hour=9, minute=30, second=0, microsecond=0)
+    t_last = t_now.replace(hour=15, minute=00, second=0, microsecond=0)
     t_exit = t_now.replace(hour=15, minute=30, second=0, microsecond=0)
 
-    # AM 09:00 ~ PM 15:30 : 매도 & 매수
+    # 매도 & 매수
+    # AM 09:00 ~ PM 15:30
     if t_start < t_now < t_exit:
         sell_watch_data()
         sell_all()
         buy_watch_data()
-        buy_all()
 
-    # PM 15:30 ~ :프로그램 종료
+    # 매수
+    # AM 09:10 ~ AM 09:30
+    # PM 15:00 ~ AM 15:30
+    if t_buy < t_now < t_idle \
+            or t_last < t_now < t_exit:
+        get_code_list()
+        buy_all()
+        time.sleep(15)
+
+    # 프로그램 종료
+    # PM 15:30 ~
     if t_exit < t_now:
         slack_send_message('`장 마감`')
         time.sleep(1)
@@ -714,9 +727,7 @@ if __name__ == '__main__':
         print_message('시작 시간')
 
         get_watch_data()
-        get_code_list()
         schedule.every(15).seconds.do(get_watch_data)
-        schedule.every(15).seconds.do(get_code_list)
 
         schedule.every(1).seconds.do(auto_trade)
 
