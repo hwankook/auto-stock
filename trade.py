@@ -610,7 +610,7 @@ def get_movingaverage(ohlc, window):
     try:
         closes = ohlc['close'].sort_index()
         ma = closes.rolling(window=window, min_periods=1).mean()
-        lastday = ohlc.iloc[::-1].iloc[-1].name
+        lastday = ohlc.iloc[0].name
         return ma.loc[lastday]
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
@@ -634,6 +634,7 @@ def buy_all():
             ma10_price = get_movingaverage(ohlc, 10)  # 10일 이동평균가
             current_price, high, low = get_current_stock(code)
             name = code_list[code][3]
+            # print(name, current_price, target_price, high, ma5_price, ma10_price)
             if target_price < current_price <= high \
                     and ma5_price < current_price \
                     and ma10_price < current_price:
