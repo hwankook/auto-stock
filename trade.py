@@ -609,18 +609,8 @@ def get_movingaverage(ohlc, window):
     """인자로 받은 종목에 대한 이동평균가격을 반환한다."""
     try:
         closes = ohlc['close'].sort_index()
-        if len(ohlc) < window:
-            temp = ohlc.iloc[::-1]
-            lastday = temp.iloc[-1].name
-            ma = closes.rolling(window=len(ohlc)).mean()
-            return ma.loc[lastday]
-
-        str_today = datetime.now().strftime('%Y%m%d')
-        if str_today == str(ohlc.iloc[0].name):
-            lastday = ohlc.iloc[1].name
-        else:
-            lastday = ohlc.iloc[0].name
-        ma = closes.rolling(window=window).mean()
+        ma = closes.rolling(window=window, min_periods=1).mean()
+        lastday = ohlc.iloc[::-1].iloc[-1].name
         return ma.loc[lastday]
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
@@ -643,10 +633,10 @@ def buy_all():
             ma5_price = get_movingaverage(ohlc, 5)  # 5일 이동평균가
             ma10_price = get_movingaverage(ohlc, 10)  # 10일 이동평균가
             current_price, high, low = get_current_stock(code)
+            name = code_list[code][3]
             if target_price < current_price <= high \
                     and ma5_price < current_price \
                     and ma10_price < current_price:
-                name = code_list[code][3]
                 enough, shares = has_enough_cash(current_price, name)
                 if enough:
                     buy_stock(code, name, shares, current_price)
