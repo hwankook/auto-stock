@@ -485,7 +485,7 @@ def buy_stock(code, name, shares, current_price):
             return
 
         # 매수 완료 종목 개수가 매수할 종목 수 이상이면 리턴
-        if config.target_buy_count < len(stock_balance):
+        if config.target_buy_count <= len(stock_balance):
             print_message(f'매수한 종목 수: {len(stock_balance)}\n'
                           f'더 이상 구매하지 않습니다.')
             return
