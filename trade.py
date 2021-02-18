@@ -618,11 +618,13 @@ def get_movingaverage(ohlc, window):
         return None
 
 
-def buy_and_sell():
+def sell_and_buy():
     """주요 신호가 포착되거나, 종목 코드의 목표가 보다 현재가가 클 때 매수한다."""
     try:
         # 매수 목표가, 5일 이동평균가, 10일 이동평균가 보다 현재가가 클 때 매수
         for code in code_list.keys():
+            sell_all()
+
             if code not in ohlc_list.keys():
                 ohlc = get_ohlc(code, 10)
                 ohlc_list[code] = ohlc
@@ -641,8 +643,6 @@ def buy_and_sell():
                 enough, shares = has_enough_cash(current_price, name)
                 if enough:
                     buy_stock(code, name, shares, current_price)
-
-            sell_all()
         code_list.clear()
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
@@ -675,7 +675,7 @@ def auto_trade():
     if t_start < t_now < t_exit:
         sell_watch_data()
         buy_watch_data()
-        buy_and_sell()
+        sell_and_buy()
 
     # PM 15:30 ~ :프로그램 종료
     if t_exit < t_now:
