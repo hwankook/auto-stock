@@ -244,6 +244,7 @@ def print_code_list():
 
 def get_code_list():
     """종목 코드를 가져온다."""
+    code_list.clear()
     get_high_volume_code()
     get_biggest_moves_code()
     market_caps = get_market_cap(list(code_list.keys()))
@@ -643,7 +644,6 @@ def sell_and_buy():
                 enough, shares = has_enough_cash(current_price, name)
                 if enough:
                     buy_stock(code, name, shares, current_price)
-        code_list.clear()
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`buy_all() -> exception! " + str(e) + "`")
