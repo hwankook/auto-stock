@@ -19,7 +19,7 @@ def connect():
         app = application.Application()
         app.start(f'C:\CREON\STARTER\coStarter.exe /prj:cp '
                   f'/id:{config.id} /pwd:{config.pwd} /pwdcert:{config.pwdcert} /autostart')
-        time.sleep(60)
+        time.sleep(180)
     except OSError as e:
         traceback.print_exc(file=sys.stdout)
         print('`connect -> exception! ' + str(e) + '`')
