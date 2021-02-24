@@ -315,18 +315,35 @@ def print_stock_balance(stock_balance):
 
     if 0 < len(stock_balance):
         message = '주식잔고\n'
-        message += '코드\t수량  대비율\t장부가\t종목명\n'
+        message += '코드\t수량  대비율\t최고익\t장부가\t종목명\n'
         for code, stock in stock_balance.items():
             shares = stock['shares']
             percentage = stock['percentage']
+            high = high_list[code] if high_list.get(code) else 0.0
             price = int(stock['price'])
             name = stock['name']
-            message += f'{code}\t{shares:>5,}\t{percentage:>5.02f}%\t{price:>,}\t{name}\n'
+            message += f'{code}\t{shares:>5,}\t{percentage:>5.02f}%\t{high:>5.02f}%\t{price:>,}\t{name}\n'
 
         # 이전 잔고메세지랑 다를때만 출력
         if pre_stock_message != message:
             print_message(message)
         pre_stock_message = message
+
+
+def get_balance():
+    """수익률, 잔량평가손익, 매도실현손익을 파이썬 셸과 동시에 슬랙으로 출력한다."""
+    cpTradeUtil.TradeInit()
+    acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
+    accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체, 1:주식, 2:선물/옵션
+    cpBalance.SetInputValue(0, acc)  # 계좌번호
+    cpBalance.SetInputValue(1, accFlag[0])  # 상품구분 - 주식 상품 중 첫번째
+
+    wait_for_request(0)
+    cpBalance.BlockRequest()
+
+    yield_rate = cpBalance.GetHeaderValue(3)
+    yield_rate = 0.0 if yield_rate == '' else float(yield_rate)
+    slack_send_message(f'수익률: `{yield_rate:>2.2f}`%')
 
 
 def get_current_stock(code):
@@ -389,59 +406,6 @@ def sell_stock(code, name, shares, percentage):
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message(f"`sell({code}) -> exception! " + str(e) + "`")
-
-
-def sell_watch_data():
-    """주요 신호 포착될 때 매도한다."""
-    try:
-        global remark
-
-        stock_balance = get_stock_balance()
-        print_stock_balance(stock_balance)
-
-        for code, stock in stock_balance.items():
-            percentage = stock['percentage']
-            shares = stock['shares']
-            if code in watch_data.keys():
-                item = watch_data[code]
-                if item['indicator'] in indicators \
-                        and indicators[item['indicator']] is False:
-                    name = cpCodeMgr.CodeToName(code)
-                    message = f'[{item["time"]}] {code} {name}, {item["remark"]}'
-                    if remark != message:
-                        slack_send_message(remark)
-                    remark = message
-                    sell_stock(code, name, shares, percentage)
-    except Exception as e:
-        traceback.print_exc(file=sys.stdout)
-        slack_send_message("`sell_watch_data() -> exception! " + str(e) + "`")
-
-
-def sell_all():
-    """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
-    try:
-        stock_balance = get_stock_balance()
-        print_stock_balance(stock_balance)
-
-        for code, stock in stock_balance.items():
-            name = stock['name']
-            shares = stock['shares']
-            percentage = stock['percentage']
-
-            if code not in high_list.keys():
-                high_list[code] = percentage
-            else:
-                high_list[code] = max(percentage, high_list[code])
-
-            if config.profit_rate <= percentage:
-                if percentage < high_list[code]:
-                    sell_stock(code, name, shares, percentage)
-
-            if percentage <= config.loss_rate:
-                sell_stock(code, name, shares, percentage)
-    except Exception as e:
-        traceback.print_exc(file=sys.stdout)
-        slack_send_message("`sell_when_to_take_losses() -> exception! " + str(e) + "`")
 
 
 def get_transaction_history(code=""):
@@ -532,32 +496,6 @@ def buy_stock(code, name, shares, current_price):
         slack_send_message("`buy_stock(" + str(code) + ") -> exception! " + str(e) + "`")
 
 
-def buy_watch_data():
-    """주요 신호 포착될 때 매수한다."""
-    try:
-        global remark
-
-        for code in watch_data.keys():
-            item = watch_data[code]
-            if item['indicator'] in indicators \
-                    and indicators[item['indicator']] is True:
-                if not cpCodeMgr.IsBigListingStock(code):
-                    continue
-
-                name = cpCodeMgr.CodeToName(code)
-                current_price, _, _ = get_current_stock(code)
-                enough, shares = has_enough_cash(current_price, name)
-                if enough:
-                    message = f'[{item["time"]}] {code} {name}, {item["remark"]}'
-                    if remark != message:
-                        slack_send_message(message)
-                    remark = message
-                    buy_stock(code, name, shares, current_price)
-    except Exception as e:
-        traceback.print_exc(file=sys.stdout)
-        slack_send_message("`buy_watch_data() -> exception! " + str(e) + "`")
-
-
 def get_ohlc(code, window):
     """인자로 받은 종목의 OHLC 가격 정보를 shares 개수만큼 반환한다."""
     columns = ['open', 'high', 'low', 'close']
@@ -585,17 +523,9 @@ def get_ohlc(code, window):
 def get_target_price_to_buy(ohlc):
     """매수 목표가를 반환한다."""
     try:
-        if len(ohlc) <= 1:
-            lastday = ohlc.iloc[0]
-            today_open = lastday['close']
-        else:
-            str_today = datetime.now().strftime('%Y%m%d')
-            if str_today == str(ohlc.iloc[0].name):
-                lastday = ohlc.iloc[1]
-                today_open = ohlc.iloc[0]['open']
-            else:
-                lastday = ohlc.iloc[0]
-                today_open = lastday['close']
+        lastday_key = ohlc.iloc[0].name
+        lastday = ohlc.loc[lastday_key]
+        today_open = lastday['close']
         lastday_high = lastday['high']
         lastday_low = lastday['low']
         target_price = today_open + (lastday_high - lastday_low) * config.K
@@ -611,18 +541,96 @@ def get_movingaverage(ohlc, window):
     try:
         closes = ohlc['close'].sort_index()
         ma = closes.rolling(window=window, min_periods=1).mean()
-        lastday = ohlc.iloc[0].name
-        return ma.loc[lastday]
+        lastday_key = ohlc.iloc[0].name
+        return ma.loc[lastday_key]
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message('`get_movingaverage(' + str(window) + ') -> exception! ' + str(e) + "`")
         return None
 
 
-def sell_and_buy():
-    """주요 신호가 포착되거나, 종목 코드의 목표가 보다 현재가가 클 때 매수한다."""
+def sell_watch_data():
+    """주요 신호 포착될 때 매도한다."""
     try:
-        # 매수 목표가, 5일 이동평균가, 10일 이동평균가 보다 현재가가 클 때 매수
+        global remark
+
+        stock_balance = get_stock_balance()
+        print_stock_balance(stock_balance)
+
+        for code, stock in stock_balance.items():
+            percentage = stock['percentage']
+            shares = stock['shares']
+            if code in watch_data.keys():
+                item = watch_data[code]
+                if item['indicator'] in indicators \
+                        and indicators[item['indicator']] is False:
+                    name = cpCodeMgr.CodeToName(code)
+                    message = f'[{item["time"]}] {code} {name}, {item["remark"]}'
+                    if remark != message:
+                        slack_send_message(remark)
+                    remark = message
+                    sell_stock(code, name, shares, percentage)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`sell_watch_data() -> exception! " + str(e) + "`")
+
+
+def buy_watch_data():
+    """주요 신호 포착될 때 매수한다."""
+    try:
+        global remark
+
+        for code in watch_data.keys():
+            item = watch_data[code]
+            if item['indicator'] in indicators \
+                    and indicators[item['indicator']] is True:
+                if not cpCodeMgr.IsBigListingStock(code):
+                    continue
+
+                name = cpCodeMgr.CodeToName(code)
+                current_price, _, _ = get_current_stock(code)
+                enough, shares = has_enough_cash(current_price, name)
+                if enough:
+                    message = f'[{item["time"]}] {code} {name}, {item["remark"]}'
+                    if remark != message:
+                        slack_send_message(message)
+                    remark = message
+                    buy_stock(code, name, shares, current_price)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`buy_watch_data() -> exception! " + str(e) + "`")
+
+
+def sell_all():
+    """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
+    try:
+        stock_balance = get_stock_balance()
+        print_stock_balance(stock_balance)
+
+        for code, stock in stock_balance.items():
+            name = stock['name']
+            shares = stock['shares']
+            percentage = stock['percentage']
+
+            if code not in high_list.keys():
+                high_list[code] = percentage
+            else:
+                high_list[code] = max(percentage, high_list[code])
+
+            if config.profit_rate <= percentage:
+                if percentage < high_list[code]:
+                    sell_stock(code, name, shares, percentage)
+
+            if percentage <= config.loss_rate:
+                sell_stock(code, name, shares, percentage)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`sell_all() -> exception! " + str(e) + "`")
+
+
+def sell_all_and_buy_code_list():
+    """종목 코드의 목표가 보다 현재가가 클 때 매수한다."""
+    try:
         for code in code_list.keys():
             sell_all()
 
@@ -631,14 +639,14 @@ def sell_and_buy():
                 ohlc_list[code] = ohlc
             else:
                 ohlc = ohlc_list[code]
-
             target_price = get_target_price_to_buy(ohlc)  # 매수 목표가
             ma5_price = get_movingaverage(ohlc, 5)  # 5일 이동평균가
             ma10_price = get_movingaverage(ohlc, 10)  # 10일 이동평균가
             current_price, high, low = get_current_stock(code)
             name = code_list[code][3]
             # print(name, current_price, target_price, high, ma5_price, ma10_price)
-            if target_price < current_price <= high \
+            # 매수 목표가, 5일 이동평균가, 10일 이동평균가 보다 현재가가 클 때 매수
+            if target_price < current_price <= (high + low) / 2.0 \
                     and ma5_price < current_price \
                     and ma10_price < current_price:
                 enough, shares = has_enough_cash(current_price, name)
@@ -646,23 +654,7 @@ def sell_and_buy():
                     buy_stock(code, name, shares, current_price)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
-        slack_send_message("`buy_all() -> exception! " + str(e) + "`")
-
-
-def get_balance():
-    """수익률, 잔량평가손익, 매도실현손익을 파이썬 셸과 동시에 슬랙으로 출력한다."""
-    cpTradeUtil.TradeInit()
-    acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
-    accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체, 1:주식, 2:선물/옵션
-    cpBalance.SetInputValue(0, acc)  # 계좌번호
-    cpBalance.SetInputValue(1, accFlag[0])  # 상품구분 - 주식 상품 중 첫번째
-
-    wait_for_request(0)
-    cpBalance.BlockRequest()
-
-    yield_rate = cpBalance.GetHeaderValue(3)
-    yield_rate = 0.0 if yield_rate == '' else float(yield_rate)
-    slack_send_message(f'수익률: `{yield_rate:>2.2f}`%')
+        slack_send_message("`buy_code_list() -> exception! " + str(e) + "`")
 
 
 def auto_trade():
@@ -675,7 +667,7 @@ def auto_trade():
     if t_start < t_now < t_exit:
         sell_watch_data()
         buy_watch_data()
-        sell_and_buy()
+        sell_all_and_buy_code_list()
 
     # PM 15:30 ~ :프로그램 종료
     if t_exit < t_now:
