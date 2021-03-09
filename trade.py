@@ -1,4 +1,5 @@
 import ctypes
+import os
 import sys
 import time
 import traceback
@@ -674,6 +675,8 @@ def auto_trade():
         slack_send_message('`장 마감`')
         time.sleep(1)
         get_balance()
+        os.system('taskkill /IM CpStart* /F /T')
+        os.system('wmic process where "name like \'%CpStart%\'" call terminate')
         sys.exit(0)
 
 
