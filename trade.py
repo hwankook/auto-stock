@@ -228,10 +228,16 @@ def get_market_cap(codes):
 
 def sort_code_list(market_caps: OrderedDict):
     """시가총액 상위 순으로 종목 코드를 정렬한다."""
+    if len(code_list) <= 0 or len(market_caps) <= 0:
+        return
+
     for (code, (vol, price, percent, name)), (code2, (market_cap)) in zip(code_list.items(), market_caps.items()):
         if code == code2:
             code_list[code] = (vol, price, percent, name, market_cap)
-    return OrderedDict(sorted(code_list.items(), key=lambda x: x[1][4], reverse=True)[:config.code_limit])
+
+    temp = OrderedDict(sorted(code_list.items(), key=lambda x: x[1][4], reverse=True)[:config.code_limit])
+    code_list.clear()
+    code_list.update(temp)
 
 
 def print_code_list():
@@ -249,9 +255,7 @@ def get_code_list():
     get_high_volume_code()
     get_biggest_moves_code()
     market_caps = get_market_cap(list(code_list.keys()))
-    temp = sort_code_list(market_caps)
-    code_list.clear()
-    code_list.update(temp)
+    sort_code_list(market_caps)
     print_code_list()
 
 
