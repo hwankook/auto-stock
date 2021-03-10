@@ -1,3 +1,4 @@
+import csv
 import ctypes
 import os
 import sys
@@ -69,6 +70,7 @@ indicators = {
 slack = Slacker(config.token)
 
 code_list = OrderedDict()
+black_list = OrderedDict()
 watch_data = {}
 ohlc_list = {}
 high_list = {}
@@ -472,6 +474,11 @@ def buy_stock(code, name, shares, current_price):
                                   f'현재가: {current_price:,}')
                     return
 
+        read_blacklist()
+        if code in black_list.keys():
+            slack_send_message(f'블랙리스트에 해당 종목({black_list[code]})이 있습니다.')
+            return
+
         cpTradeUtil.TradeInit()
         acc = cpTradeUtil.AccountNumber[0]  # 계좌번호
         accFlag = cpTradeUtil.GoodsList(acc, 1)  # -1:전체,1:주식,2:선물/옵션
@@ -553,32 +560,6 @@ def get_movingaverage(ohlc, window):
         return None
 
 
-def sell_watch_data():
-    """주요 신호 포착될 때 매도한다."""
-    try:
-        global remark
-
-        stock_balance = get_stock_balance()
-        print_stock_balance(stock_balance)
-
-        for code, stock in stock_balance.items():
-            percentage = stock['percentage']
-            shares = stock['shares']
-            if code in watch_data.keys():
-                item = watch_data[code]
-                if item['indicator'] in indicators \
-                        and indicators[item['indicator']] is False:
-                    name = cpCodeMgr.CodeToName(code)
-                    message = f'[{item["time"]}] {code} {name}, {item["remark"]}'
-                    if remark != message:
-                        slack_send_message(remark)
-                    remark = message
-                    sell_stock(code, name, shares, percentage)
-    except Exception as e:
-        traceback.print_exc(file=sys.stdout)
-        slack_send_message("`sell_watch_data() -> exception! " + str(e) + "`")
-
-
 def buy_watch_data():
     """주요 신호 포착될 때 매수한다."""
     try:
@@ -605,6 +586,47 @@ def buy_watch_data():
         slack_send_message("`buy_watch_data() -> exception! " + str(e) + "`")
 
 
+def sell_watch_data():
+    """주요 신호 포착될 때 매도한다."""
+    try:
+        global remark
+
+        stock_balance = get_stock_balance()
+        print_stock_balance(stock_balance)
+
+        for code, stock in stock_balance.items():
+            percentage = stock['percentage']
+            shares = stock['shares']
+            if code in watch_data.keys():
+                item = watch_data[code]
+                if item['indicator'] in indicators \
+                        and indicators[item['indicator']] is False:
+                    name = cpCodeMgr.CodeToName(code)
+                    message = f'[{item["time"]}] {code} {name}, {item["remark"]}'
+                    if remark != message:
+                        slack_send_message(remark)
+                    remark = message
+                    sell_stock(code, name, shares, percentage)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`sell_watch_data() -> exception! " + str(e) + "`")
+
+
+def read_blacklist():
+    with open('blacklist.csv', 'r', encoding="utf-8") as f:
+        csv_reader = csv.reader(f)
+        for row in csv_reader:
+            if row:
+                black_list[row[0]] = [row[1], row[2]]
+
+
+def write_blacklist(code, name, percentage):
+    with open('blacklist.csv', 'a', encoding="utf-8", newline='\n') as f:
+        csv_writer = csv.writer(f)
+        row = [code, name, percentage]
+        csv_writer.writerow(row)
+
+
 def sell_all():
     """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
     try:
@@ -627,6 +649,7 @@ def sell_all():
 
             if percentage <= config.loss_rate:
                 sell_stock(code, name, shares, percentage)
+                write_blacklist(code, name, percentage)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`sell_all() -> exception! " + str(e) + "`")
