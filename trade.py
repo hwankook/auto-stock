@@ -10,12 +10,11 @@ from datetime import datetime
 import pandas as pd
 import schedule
 import win32com.client
-from slacker import Slacker
-
 from config import config
 from connect import connect
 from holiday import is_holiday
 from marketwatch import CpRpMarketWatch
+from slacker import Slacker
 
 indicators = {
     10: '외국계증권사창구첫매수',
@@ -613,11 +612,14 @@ def sell_watch_data():
 
 
 def read_blacklist():
-    with open('blacklist.csv', 'r', encoding="utf-8") as f:
-        csv_reader = csv.reader(f)
-        for row in csv_reader:
-            if row:
-                black_list[row[0]] = [row[1], row[2]]
+    try:
+        with open('blacklist.csv', 'r', encoding="utf-8") as f:
+            csv_reader = csv.reader(f)
+            for row in csv_reader:
+                if row:
+                    black_list[row[0]] = [row[1], row[2]]
+    except Exception as e:
+        pass
 
 
 def write_blacklist(code, name, percentage):
