@@ -38,7 +38,8 @@ def predict_price():
 
 
 if __name__ == '__main__':
-    # predict_price()
+    predict_price()
+
     schedule.every(10).minutes.do(lambda: predict_price())
 
     while True:
