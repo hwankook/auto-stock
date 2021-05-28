@@ -1,30 +1,25 @@
 import csv
 import os
 import sys
+import time
 import traceback
 
 import pandas as pd
+import schedule
 from fbprophet import Prophet
 
 
 def predict_price():
     """Prophet으로 당일 종가 가격 예측"""
-    path = './ohlc'
+    path = './curr'
 
     for file_path in os.listdir(path):
-        ohlc = pd.read_csv(path + '/' + file_path)
-
-        if len(ohlc) <= 30:
-            continue
-
-        ohlc['ds'] = pd.to_datetime(ohlc.iloc[:, 0].astype(str), format='%Y-%m-%d')
-        ohlc['y'] = ohlc.iloc[:, 4]
-        data = ohlc[['ds', 'y']]
+        df = pd.read_csv(path + '/' + file_path)
 
         model = Prophet()
-        model.fit(data)
+        model.fit(df)
 
-        future = model.make_future_dataframe(periods=1, freq='D')
+        future = model.make_future_dataframe(periods=1, freq='H')
 
         forecast = model.predict(future)
 
@@ -43,5 +38,9 @@ def predict_price():
 
 
 if __name__ == '__main__':
-    predict_price()
-    # schedule.every().hour.do(lambda: predict_price("KRW-BTC"))
+    # predict_price()
+    schedule.every(10).minutes.do(lambda: predict_price())
+
+    while True:
+        schedule.run_pending()
+        time.sleep(1)

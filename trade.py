@@ -321,21 +321,20 @@ def print_stock_balance(stock_balance):
     """보유 종목을 출력한다."""
     global pre_stock_message
 
-    if stock_balance:
-        message = '주식잔고\n'
-        message += '코드\t수량  대비율\t최고익\t장부가\t종목명\n'
-        for code, stock in stock_balance.items():
-            shares = stock['shares']
-            percentage = stock['percentage']
-            high = high_list[code] if high_list.get(code) else 0.0
-            price = int(stock['price'])
-            name = stock['name']
-            message += f'{code}\t{shares:>5,}\t{percentage:>5.02f}%\t{high:>5.02f}%\t{price:>,}\t{name}\n'
+    message = '주식잔고\n'
+    message += '코드\t수량  대비율\t최고익\t장부가\t종목명\n'
+    for code, stock in stock_balance.items():
+        shares = stock['shares']
+        percentage = stock['percentage']
+        high = high_list[code] if high_list.get(code) else 0.0
+        price = int(stock['price'])
+        name = stock['name']
+        message += f'{code}\t{shares:>5,}\t{percentage:>5.02f}%\t{high:>5.02f}%\t{price:>,}\t{name}\n'
 
-        # 이전 잔고메세지랑 다를때만 출력
-        if pre_stock_message != message:
-            print_message(message)
-        pre_stock_message = message
+    # 이전 잔고메세지랑 다를때만 출력
+    if pre_stock_message != message:
+        print_message(message)
+    pre_stock_message = message
 
 
 def get_balance():
@@ -506,13 +505,6 @@ def buy_stock(code, name, shares, current_price):
         slack_send_message("`buy_stock(" + str(code) + ") -> exception! " + str(e) + "`")
 
 
-def getHMTFromTime(str_time):
-    from datetime import time
-    hh, mm = divmod(str_time, 10000)
-    mm, tt = divmod(mm, 100)
-    return time(hh, mm, tt).strftime("%H:%M:%S")
-
-
 def get_ohlc(code, window):
     """인자로 받은 종목의 OHLC 가격 정보를 shares 개수만큼 반환한다."""
     path = './ohlc'
@@ -529,14 +521,14 @@ def get_ohlc(code, window):
         cpOhlc.SetInputValue(0, code)  # 종목코드
         cpOhlc.SetInputValue(1, ord('2'))  # 1:기간, 2:개수
         cpOhlc.SetInputValue(4, window)  # 요청개수
-        cpOhlc.SetInputValue(5, [0, 1, 2, 3, 4, 5])  # 0:날짜, 2~5:시가,고가,저가,종가
-        cpOhlc.SetInputValue(6, ord('m'))  # D:일단위 m:분단위
+        cpOhlc.SetInputValue(5, [0, 1, 2, 3, 4, 5])  # 0:날짜, 1:시간, 2~5:시가,고가,저가,종가
+        cpOhlc.SetInputValue(6, ord('D'))  # D:일단위, m:분단위
         cpOhlc.SetInputValue(9, ord('1'))  # 0:무수정주가, 1:수정주가
 
         wait_for_request(1)
         cpOhlc.BlockRequest()
         for i in range(cpOhlc.GetHeaderValue(3)):  # 3:수신개수
-            index.append(str(cpOhlc.GetDataValue(0, i)) + ' ' + getHMTFromTime(cpOhlc.GetDataValue(1, i)))
+            index.append(cpOhlc.GetDataValue(0, i))
             rows.append([cpOhlc.GetDataValue(2, i),
                          cpOhlc.GetDataValue(3, i),
                          cpOhlc.GetDataValue(4, i),
@@ -651,6 +643,10 @@ def sell_watch_data():
         global remark
 
         stock_balance = get_stock_balance()
+
+        if not stock_balance:
+            return
+
         print_stock_balance(stock_balance)
 
         for code, stock in stock_balance.items():
@@ -699,6 +695,10 @@ def sell_all():
     """보유한 모든 종목을 최유리 지정가 IOC 조건으로 매도한다."""
     try:
         stock_balance = get_stock_balance()
+
+        if not stock_balance:
+            return
+
         print_stock_balance(stock_balance)
 
         for code, stock in stock_balance.items():
@@ -729,8 +729,10 @@ def sell_all_and_buy_code_list():
         for code in code_list.keys():
             sell_all()
 
+            get_curr(code)
+
             if code not in ohlc_list.keys():
-                ohlc = get_ohlc(code, 500)
+                ohlc = get_ohlc(code, 10)
                 ohlc_list[code] = ohlc
             else:
                 ohlc = ohlc_list[code]
@@ -760,6 +762,49 @@ def sell_all_and_buy_code_list():
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`buy_code_list() -> exception! " + str(e) + "`")
+
+
+def getHMTFromTime(str_time):
+    from datetime import time
+    hh, mm = divmod(str_time, 10000)
+    mm, tt = divmod(mm, 100)
+    return time(hh, mm, tt).strftime("%H:%M:%S")
+
+
+def get_curr(code):
+    path = './curr'
+    os.makedirs(path, exist_ok=True)
+
+    today = datetime.now().strftime('%Y-%m-%d')
+    file_path = path + '/' + code + '-' + today + '.csv'
+
+    # 현재가 통신
+    cpStockBid.SetInputValue(0, code)
+    cpStockBid.SetInputValue(2, 80)  # 요청개수 (최대 80)
+    cpStockBid.SetInputValue(3, ord('C'))  # C 체결가 비교 방식 H 호가 비교방식
+
+    cpStockBid.BlockRequest()
+
+    if cpStockBid.GetDibStatus() != 0:
+        print("통신상태", cpStockBid.GetDibStatus(), cpStockBid.GetDibMsg1())
+        return False
+
+    columns = ['ds', 'y']
+    rows = []
+    for i in range(cpStockBid.GetHeaderValue(2)):
+        rows.append([
+            today + ' ' + getHMTFromTime(cpStockBid.GetDataValue(9, i)),
+            cpStockBid.GetDataValue(4, i)
+        ])
+
+    df = pd.DataFrame(rows, columns=columns)
+
+    if os.path.isfile(file_path):
+        df = df.append(pd.read_csv(file_path), ignore_index=True)
+
+    df.to_csv(file_path, index=False)
+
+    return df
 
 
 def auto_trade():
@@ -808,6 +853,7 @@ if __name__ == '__main__':
         cpOhlc = win32com.client.Dispatch('CpSysDib.StockChart')
         cpOrder = win32com.client.Dispatch('CpTrade.CpTd0311')
         cpTrade = win32com.client.Dispatch('CpTrade.CpTd5341')
+        cpStockBid = win32com.client.Dispatch("Dscbo1.StockBid")
         cpRpMarketWatch = CpRpMarketWatch()
 
         print_message('시작 시간')
