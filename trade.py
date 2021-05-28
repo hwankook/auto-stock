@@ -321,7 +321,7 @@ def print_stock_balance(stock_balance):
     """보유 종목을 출력한다."""
     global pre_stock_message
 
-    if 0 < len(stock_balance):
+    if stock_balance:
         message = '주식잔고\n'
         message += '코드\t수량  대비율\t최고익\t장부가\t종목명\n'
         for code, stock in stock_balance.items():
@@ -743,6 +743,7 @@ def sell_all_and_buy_code_list():
             # print(name, current_price, target_price, high, ma5_price, ma10_price)
             # 매수 목표가, 5일 이동평균가, 10일 이동평균가 보다 현재가가 클 때 매수
             if target_price < current_price < predicted_price \
+                    and current_price * config.profit_rate < predicted_price \
                     and ma5_price < current_price \
                     and ma10_price < current_price:
                 print(datetime.now().strftime('[%Y-%m-%d %H:%M:%S]'))
