@@ -745,7 +745,7 @@ def sell_all_and_buy_code_list():
             # print(name, current_price, target_price, high, ma5_price, ma10_price)
             # 매수 목표가, 5일 이동평균가, 10일 이동평균가 보다 현재가가 클 때 매수
             if target_price < current_price < predicted_price \
-                    and current_price * config.profit_rate < predicted_price \
+                    and current_price + current_price * (config.profit_rate / 100) < predicted_price \
                     and ma5_price < current_price \
                     and ma10_price < current_price:
                 print(datetime.now().strftime('[%Y-%m-%d %H:%M:%S]'))
