@@ -367,7 +367,7 @@ def get_current_stock(code):
     return current_price, high, low
 
 
-def has_enough_cash(current_price, name):
+def has_enough_cash(current_price):
     """매수할 때 100% 증거금이 충분한지 조회한다."""
     total_cash = int(get_current_cash())  # 100% 증거금 주문 가능 금액 조회
     buy_amount = int(config.buy_amount)
@@ -407,7 +407,7 @@ def sell_stock(code, name, shares, percentage):
             print_message('주의: 연속 주문 제한')
             wait_for_request(0)
             cpOrder.BlockRequest()
-        slack_send_message(f'{name} {shares}주 매도 (손익: `{percentage:2.2f}`) -> returned {ret}')
+        slack_send_message(f'{name} {shares}주 매도 (손익: `{percentage:2.2f}`)')
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message(f"`sell({code}) -> exception! " + str(e) + "`")
@@ -499,7 +499,7 @@ def buy_stock(code, name, shares, current_price):
             cpOrder.BlockRequest()
         stock_name, stock_qty, stock_price = get_stock_balance(code)
         if shares <= stock_qty:
-            slack_send_message(f'{name} {stock_price:,.1f}원 {shares}주 매수 -> returned {ret}')
+            slack_send_message(f'{name} {stock_price:,.1f}원 {shares}주 매수')
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`buy_stock(" + str(code) + ") -> exception! " + str(e) + "`")
@@ -625,7 +625,7 @@ def buy_watch_data():
 
                 name = cpCodeMgr.CodeToName(code)
                 current_price, _, _ = get_current_stock(code)
-                enough, shares = has_enough_cash(current_price, name)
+                enough, shares = has_enough_cash(current_price)
                 if enough:
                     message = f'[{item["time"]}] {code} {name}, {item["remark"]}'
                     if remark != message:
@@ -755,7 +755,7 @@ def sell_all_and_buy_code_list():
                 print(f'예상가: {int(predicted_price):,}원')
                 print(f'MA05  : {int(ma5_price):,}원')
                 print(f'MA10  : {int(ma10_price):,}원')
-                enough, shares = has_enough_cash(current_price, name)
+                enough, shares = has_enough_cash(current_price)
                 if enough:
                     buy_stock(code, name, shares, current_price)
                 print('----------------------------------------------------------------------------')
