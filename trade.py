@@ -704,20 +704,26 @@ def sell_all():
         for code, stock in stock_balance.items():
             name = stock['name']
             shares = stock['shares']
+            price = stock['price']
             percentage = stock['percentage']
 
-            if code not in high_list.keys():
-                high_list[code] = percentage
-            else:
-                high_list[code] = max(percentage, high_list[code])
+            predicted_price = get_predicted_price(code)  # 예상 목표가
 
-            if config.profit_rate <= percentage:
-                if percentage < high_list[code]:
-                    sell_stock(code, name, shares, percentage)
-
-            if percentage <= config.loss_rate:
+            if predicted_price and predicted_price < price:
                 sell_stock(code, name, shares, percentage)
-                write_blacklist(code, name, percentage)
+            else:
+                if code not in high_list.keys():
+                    high_list[code] = percentage
+                else:
+                    high_list[code] = max(percentage, high_list[code])
+
+                if config.profit_rate <= percentage:
+                    if percentage < high_list[code]:
+                        sell_stock(code, name, shares, percentage)
+
+                if percentage <= config.loss_rate:
+                    sell_stock(code, name, shares, percentage)
+                    write_blacklist(code, name, percentage)
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`sell_all() -> exception! " + str(e) + "`")
