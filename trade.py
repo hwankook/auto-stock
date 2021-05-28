@@ -323,7 +323,8 @@ def print_stock_balance(stock_balance):
 
     message = '주식잔고\n'
     message += '코드\t수량  대비율\t최고익\t장부가\t종목명\n'
-    for code, stock in stock_balance.items():
+    for code in stock_balance:
+        stock = stock_balance[code]
         shares = stock['shares']
         percentage = stock['percentage']
         high = high_list[code] if high_list.get(code) else 0.0
@@ -407,7 +408,6 @@ def sell_stock(code, name, shares, percentage):
             print_message('주의: 연속 주문 제한')
             wait_for_request(0)
             cpOrder.BlockRequest()
-        slack_send_message(f'{name} {shares}주 매도 (손익: `{percentage:2.2f}`)')
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message(f"`sell({code}) -> exception! " + str(e) + "`")
@@ -644,12 +644,10 @@ def sell_watch_data():
 
         stock_balance = get_stock_balance()
 
-        if not stock_balance:
-            return
-
         print_stock_balance(stock_balance)
 
-        for code, stock in stock_balance.items():
+        for code in stock_balance:
+            stock = stock_balance[code]
             percentage = stock['percentage']
             shares = stock['shares']
             if code in watch_data.keys():
@@ -696,12 +694,10 @@ def sell_all():
     try:
         stock_balance = get_stock_balance()
 
-        if not stock_balance:
-            return
-
         print_stock_balance(stock_balance)
 
-        for code, stock in stock_balance.items():
+        for code in stock_balance:
+            stock = stock_balance[code]
             name = stock['name']
             shares = stock['shares']
             price = stock['price']
@@ -709,8 +705,12 @@ def sell_all():
 
             predicted_price = get_predicted_price(code)  # 예상 목표가
 
-            if predicted_price and predicted_price < price:
+            if 0 < percentage and predicted_price and predicted_price < price:
                 sell_stock(code, name, shares, percentage)
+                slack_send_message(f'{name} {shares}주 매도\n'
+                                   f'손익: `{percentage:2.2f}`\n'
+                                   f'예상가: {predicted_price:2.2f}\n'
+                                   f'현재가: {price:2.2f}')
             else:
                 if code not in high_list.keys():
                     high_list[code] = percentage
@@ -720,10 +720,12 @@ def sell_all():
                 if config.profit_rate <= percentage:
                     if percentage < high_list[code]:
                         sell_stock(code, name, shares, percentage)
+                        slack_send_message(f'{name} {shares}주 매도 (손익: `{percentage:2.2f}`)')
 
                 if percentage <= config.loss_rate:
                     sell_stock(code, name, shares, percentage)
                     write_blacklist(code, name, percentage)
+                    slack_send_message(f'{name} {shares}주 매도 (손익: `{percentage:2.2f}`)')
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`sell_all() -> exception! " + str(e) + "`")
