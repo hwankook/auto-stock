@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import traceback
+from datetime import datetime
 
 import pandas as pd
 import schedule
@@ -38,10 +39,16 @@ def predict_price():
 
 
 if __name__ == '__main__':
-    predict_price()
+    """자동 매도, 매수, 종료한다."""
+    t_now = datetime.now()
+    t_start = t_now.replace(hour=8, minute=30, second=0, microsecond=0)
+    t_exit = t_now.replace(hour=16, minute=00, second=0, microsecond=0)
 
-    schedule.every(10).minutes.do(lambda: predict_price())
+    if t_start < t_now < t_exit:
+        predict_price()
 
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+        schedule.every(10).minutes.do(lambda: predict_price())
+
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
