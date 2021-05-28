@@ -7,14 +7,16 @@ import traceback
 from collections import OrderedDict, defaultdict
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
 import schedule
 import win32com.client
+from slacker import Slacker
+
 from config import config
 from connect import connect
 from holiday import is_holiday
 from marketwatch import CpRpMarketWatch
-from slacker import Slacker
 
 indicators = {
     10: '외국계증권사창구첫매수',
@@ -119,7 +121,7 @@ def wait_for_request(check_type):
         return
 
     remain_time = cpStatus.LimitRequestRemainTime
-    print(f'대기시간: {remain_time / 1000:2.2f}초')
+    print_message(f'대기시간: {remain_time / 1000:2.2f}초')
     time.sleep(remain_time / 1000)
 
 
@@ -374,13 +376,11 @@ def has_enough_cash(current_price, name):
     if total_cash < current_price * shares:
         shares = int(total_cash // current_price)
         if shares == 0:
-            print_message(f'{name} {current_price:,}\n'
-                          f'100% 증거금 {current_price - total_cash:,}원 부족')
+            print(f'100% 증거금 {current_price - total_cash:,}원 부족')
             return False, 0
 
     if shares == 0:
-        print_message(f'{name} {current_price:,}\n'
-                      f'종목당 주문가능금액 {current_price - config.buy_amount:,}원 부족')
+        print(f'종목당 주문가능금액 {current_price - config.buy_amount:,}원 부족')
         return False, 0
 
     return True, shares
@@ -506,44 +506,104 @@ def buy_stock(code, name, shares, current_price):
         slack_send_message("`buy_stock(" + str(code) + ") -> exception! " + str(e) + "`")
 
 
+def getHMTFromTime(str_time):
+    from datetime import time
+    hh, mm = divmod(str_time, 10000)
+    mm, tt = divmod(mm, 100)
+    return time(hh, mm, tt).strftime("%H:%M:%S")
+
+
 def get_ohlc(code, window):
     """인자로 받은 종목의 OHLC 가격 정보를 shares 개수만큼 반환한다."""
-    columns = ['open', 'high', 'low', 'close']
-    index, rows = [], []
-    cpOhlc.SetInputValue(0, code)  # 종목코드
-    cpOhlc.SetInputValue(1, ord('2'))  # 1:기간, 2:개수
-    cpOhlc.SetInputValue(4, window)  # 요청개수
-    cpOhlc.SetInputValue(5, [0, 2, 3, 4, 5])  # 0:날짜, 2~5:시가,고가,저가,종가
-    cpOhlc.SetInputValue(6, ord('D'))  # D:일단위
-    cpOhlc.SetInputValue(9, ord('1'))  # 0:무수정주가, 1:수정주가
+    path = './ohlc'
+    os.makedirs(path, exist_ok=True)
 
-    wait_for_request(1)
-    cpOhlc.BlockRequest()
-    for i in range(cpOhlc.GetHeaderValue(3)):  # 3:수신개수
-        index.append(cpOhlc.GetDataValue(0, i))
-        rows.append([cpOhlc.GetDataValue(1, i),
-                     cpOhlc.GetDataValue(2, i),
-                     cpOhlc.GetDataValue(3, i),
-                     cpOhlc.GetDataValue(4, i)])
-    df = pd.DataFrame(rows, index=index, columns=columns)
+    today = datetime.now().strftime('%Y-%m-%d')
+    file_path = path + '/' + code + '-' + today + '.csv'
+
+    if os.path.isfile(file_path):
+        df = pd.read_csv(file_path)
+    else:
+        columns = ['open', 'high', 'low', 'close']
+        index, rows = [], []
+        cpOhlc.SetInputValue(0, code)  # 종목코드
+        cpOhlc.SetInputValue(1, ord('2'))  # 1:기간, 2:개수
+        cpOhlc.SetInputValue(4, window)  # 요청개수
+        cpOhlc.SetInputValue(5, [0, 1, 2, 3, 4, 5])  # 0:날짜, 2~5:시가,고가,저가,종가
+        cpOhlc.SetInputValue(6, ord('m'))  # D:일단위 m:분단위
+        cpOhlc.SetInputValue(9, ord('1'))  # 0:무수정주가, 1:수정주가
+
+        wait_for_request(1)
+        cpOhlc.BlockRequest()
+        for i in range(cpOhlc.GetHeaderValue(3)):  # 3:수신개수
+            index.append(str(cpOhlc.GetDataValue(0, i)) + ' ' + getHMTFromTime(cpOhlc.GetDataValue(1, i)))
+            rows.append([cpOhlc.GetDataValue(2, i),
+                         cpOhlc.GetDataValue(3, i),
+                         cpOhlc.GetDataValue(4, i),
+                         cpOhlc.GetDataValue(5, i)])
+
+        df = pd.DataFrame(rows, index=index, columns=columns)
+
+        df.to_csv(file_path, index=True)
 
     return df
 
 
-def get_target_price_to_buy(ohlc):
+def get_ror(ohlc, k):
+    ohlc['range'] = (ohlc['high'] - ohlc['low']) * k
+    ohlc['target'] = ohlc['open'] + ohlc['range'].shift(1)
+
+    ohlc['ror'] = np.where(ohlc['high'] > ohlc['target'], ohlc['close'] / ohlc['target'], 1)
+
+    return max(ohlc['ror'].cumprod())
+
+
+def get_k(ohlc):
+    config.K = 0.1
+    max_ror = get_ror(ohlc, 0.1)
+
+    for k in [p / 10 for p in range(2, 10)]:
+        ror = get_ror(ohlc, k)
+        if max_ror < ror:
+            max_ror = ror
+            config.K = k
+
+
+def get_target_price(ohlc):
     """매수 목표가를 반환한다."""
+    target_price = 0
+
     try:
         lastday_key = ohlc.iloc[0].name
         lastday = ohlc.loc[lastday_key]
         today_open = lastday['close']
         lastday_high = lastday['high']
         lastday_low = lastday['low']
+        get_k(ohlc)
         target_price = today_open + (lastday_high - lastday_low) * config.K
-        return target_price
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`get_target_price() -> exception! " + str(e) + "`")
-        return None
+
+    return target_price
+
+
+def get_predicted_price(code):
+    """예상 목표가를 반환한다."""
+    predicted_price = 0
+
+    try:
+        file_path = './predict/' + code + '.csv'
+        if os.path.isfile(file_path):
+            with open(file_path, 'r', encoding="utf-8") as f:
+                csv_reader = csv.reader(f)
+                for row in csv_reader:
+                    predicted_price = float(row[1])
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`get_target_price() -> exception! " + str(e) + "`")
+
+    return predicted_price
 
 
 def get_movingaverage(ohlc, window):
@@ -613,20 +673,26 @@ def sell_watch_data():
 
 def read_blacklist():
     try:
-        with open('blacklist.csv', 'r', encoding="utf-8") as f:
-            csv_reader = csv.reader(f)
-            for row in csv_reader:
-                if row:
-                    black_list[row[0]] = [row[1], row[2]]
+        if os.path.isfile('blacklist.csv'):
+            with open('blacklist.csv', 'r', encoding="utf-8") as f:
+                csv_reader = csv.reader(f)
+                for row in csv_reader:
+                    if row:
+                        black_list[row[0]] = [row[1], row[2]]
     except Exception as e:
-        pass
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`read_blacklist() -> exception! " + str(e) + "`")
 
 
 def write_blacklist(code, name, percentage):
-    with open('blacklist.csv', 'a', encoding="utf-8", newline='\n') as f:
-        csv_writer = csv.writer(f)
-        row = [code, name, percentage]
-        csv_writer.writerow(row)
+    try:
+        with open('blacklist.csv', 'a', encoding="utf-8", newline='\n') as f:
+            csv_writer = csv.writer(f)
+            row = [code, name, percentage]
+            csv_writer.writerow(row)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        slack_send_message("`write_blacklist() -> exception! " + str(e) + "`")
 
 
 def sell_all():
@@ -664,23 +730,32 @@ def sell_all_and_buy_code_list():
             sell_all()
 
             if code not in ohlc_list.keys():
-                ohlc = get_ohlc(code, 10)
+                ohlc = get_ohlc(code, 500)
                 ohlc_list[code] = ohlc
             else:
                 ohlc = ohlc_list[code]
-            target_price = get_target_price_to_buy(ohlc)  # 매수 목표가
+            target_price = get_target_price(ohlc)  # 매수 목표가
+            predicted_price = get_predicted_price(code)  # 예상 목표가
             ma5_price = get_movingaverage(ohlc, 5)  # 5일 이동평균가
             ma10_price = get_movingaverage(ohlc, 10)  # 10일 이동평균가
             current_price, high, low = get_current_stock(code)
             name = code_list[code][3]
             # print(name, current_price, target_price, high, ma5_price, ma10_price)
             # 매수 목표가, 5일 이동평균가, 10일 이동평균가 보다 현재가가 클 때 매수
-            if target_price < current_price <= (high + low) / 2.0 \
+            if target_price < current_price < predicted_price \
                     and ma5_price < current_price \
                     and ma10_price < current_price:
+                print(datetime.now().strftime('[%Y-%m-%d %H:%M:%S]'))
+                print(f'{name}')
+                print(f'현재가: {current_price:,}원')
+                print(f'목표가: {int(target_price):,}원')
+                print(f'예상가: {int(predicted_price):,}원')
+                print(f'MA05  : {int(ma5_price):,}원')
+                print(f'MA10  : {int(ma10_price):,}원')
                 enough, shares = has_enough_cash(current_price, name)
                 if enough:
                     buy_stock(code, name, shares, current_price)
+                print('----------------------------------------------------------------------------')
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
         slack_send_message("`buy_code_list() -> exception! " + str(e) + "`")
